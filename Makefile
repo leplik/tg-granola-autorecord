@@ -1,6 +1,5 @@
 APP_NAME := Telegram-Granola Autorecord
 COMMAND := tg-granola-autorecord
-AGENT_LABEL := pro.saac.tg-granola-autorecord.agent
 
 .PHONY: build test app install uninstall icon release
 
@@ -15,9 +14,9 @@ app:
 	scripts/build-app.sh --sign - --arch native
 
 install: app
+	-pkill -TERM -f "/Applications/$(APP_NAME).app/Contents/MacOS/$(COMMAND)$$"
 	rm -rf "/Applications/$(APP_NAME).app"
 	cp -R ".build/app/$(APP_NAME).app" /Applications/
-	-launchctl kickstart -k "gui/$$(id -u)/$(AGENT_LABEL)" 2>/dev/null
 	open "/Applications/$(APP_NAME).app"
 
 uninstall:

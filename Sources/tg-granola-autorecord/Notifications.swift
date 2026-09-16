@@ -135,4 +135,10 @@ enum SystemSettings {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
     }
+
+    /// Opens this app's page in Notifications settings.
+    static func openNotifications() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Product.bundleID)")!
+        NSWorkspace.shared.open(url)
+    }
 }

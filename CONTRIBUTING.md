@@ -19,14 +19,14 @@ make app      # ad-hoc signed bundle in .build/app
 make install  # copies it to /Applications and opens it
 ```
 
-An ad-hoc signed build gets a new code signature on every build, so macOS asks for Accessibility access again after each `make install`. Remove the old entry in System Settings first.
+An ad-hoc signed build gets a new code signature on every build, so macOS asks for Accessibility access again after each `make install`. Remove the old entry in System Settings first. macOS may also not offer the notification prompt to a build that is not notarized; allow notifications for the app in System Settings instead.
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
 | `Sources/AutorecordCore` | Pure logic with no system calls: call detection, the state machine, the stop sequence and the agent loop. Everything here is covered by tests. |
-| `Sources/tg-granola-autorecord` | The app and CLI: CoreAudio, deep links, the Unix socket, Accessibility, notifications, ServiceManagement. |
+| `Sources/tg-granola-autorecord` | The app and CLI: CoreAudio, deep links, the Unix socket, Accessibility, notifications, the login item. |
 | `Tests/AutorecordCoreTests` | Unit tests, plus end-to-end agent scenarios that run against a fake clock, Telegram and Granola. |
 | `scripts/` | Bundle build, icon and release scripts. |
 | `docs/internals.md` | The Granola internals the app depends on, and how to re-check them. |

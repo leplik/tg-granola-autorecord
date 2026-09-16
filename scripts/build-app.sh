@@ -46,7 +46,7 @@ fi
 APP="$OUTPUT/$NAME.app"
 CONTENTS="$APP/Contents"
 rm -rf "$APP"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Library/LaunchAgents"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BINARY" "$CONTENTS/MacOS/$COMMAND"
 cp Resources/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
 
@@ -87,37 +87,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-cat > "$CONTENTS/Library/LaunchAgents/$BUNDLE_ID.agent.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>$BUNDLE_ID.agent</string>
-  <key>BundleProgram</key>
-  <string>Contents/MacOS/$COMMAND</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$COMMAND</string>
-    <string>agent</string>
-  </array>
-  <key>AssociatedBundleIdentifiers</key>
-  <array>
-    <string>$BUNDLE_ID</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>ProcessType</key>
-  <string>Interactive</string>
-  <key>LimitLoadToSessionType</key>
-  <string>Aqua</string>
-</dict>
-</plist>
-PLIST
-
-plutil -lint "$CONTENTS/Info.plist" "$CONTENTS/Library/LaunchAgents/$BUNDLE_ID.agent.plist" >/dev/null
+plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
 echo "==> Signing with identity: $SIGN"
 if [[ "$SIGN" == "-" ]]; then

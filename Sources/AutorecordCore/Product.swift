@@ -35,6 +35,11 @@ public struct Paths: Sendable {
         supportDirectory.appendingPathComponent("owned-recording.json")
     }
 
+    /// Held by the running app so that a second copy exits instead of recording calls twice.
+    public var lock: URL {
+        supportDirectory.appendingPathComponent("app.lock")
+    }
+
     public var log: URL {
         homeDirectory.appendingPathComponent("Library/Logs/\(Product.command).log")
     }

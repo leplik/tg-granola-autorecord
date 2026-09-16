@@ -39,11 +39,11 @@ enum Doctor {
         } else {
             line(.problem, "the app is not installed")
         }
-        if LoginItem.isLoaded() {
-            line(.ok, "background agent is loaded")
-        } else {
-            line(.problem, "background agent is not loaded: open the app once, or run `\(Product.command) enable`")
+        if Preferences.turnedOffByUser {
+            line(.problem, "turned off: run `\(Product.command) enable` or open the app")
         }
+        let loginItem = LoginItem.service.status
+        line(loginItem == .enabled ? .ok : .problem, LoginItem.describe(loginItem))
         reportAgentStatus(paths: paths, line: line)
 
         section("Granola")
@@ -104,24 +104,24 @@ enum Doctor {
             let data = try? Data(contentsOf: paths.status),
             let status = try? AgentStatus.decoder().decode(AgentStatus.self, from: data)
         else {
-            line(.warning, "the agent has not reported its status yet")
+            line(.problem, "the app has never run: open it once")
             return
         }
         let age = Int(Date().timeIntervalSince(status.updatedAt))
         let alive = kill(status.pid, 0) == 0
         if alive && age < 60 {
-            line(.ok, "agent \(status.version) running as pid \(status.pid), state \(status.phase)")
+            line(.ok, "running as pid \(status.pid), state \(status.phase)")
         } else {
-            line(.problem, "agent last reported \(age) s ago and is not running")
+            line(.problem, "not running, last seen \(age) s ago: open the app or run `\(Product.command) enable`")
         }
         if status.version != Product.version {
-            line(.warning, "agent version \(status.version) differs from this command's \(Product.version); run `\(Product.command) restart`")
+            line(.warning, "the running app is version \(status.version), this command is \(Product.version): run `\(Product.command) restart`")
         }
         line(status.accessibilityTrusted ? .ok : .problem,
              status.accessibilityTrusted ? "Accessibility access allowed" : "Accessibility access is off: recordings will not stop by themselves")
         switch status.notificationsAllowed {
         case true?: line(.ok, "notifications allowed")
-        case false?: line(.warning, "notifications are off: you will not hear about problems")
+        case false?: line(.problem, "notifications are off: allow them in System Settings > Notifications > \(Product.name)")
         case nil: line(.info, "notification permission not checked yet")
         }
         if let lastEvent = status.lastEvent {

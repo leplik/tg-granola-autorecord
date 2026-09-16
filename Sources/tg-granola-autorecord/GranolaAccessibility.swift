@@ -12,7 +12,7 @@ enum GranolaAccessibility {
         guard isTrusted(prompt: false) else { return .notTrusted }
         guard let app = appElement() else { return .granolaNotRunning }
 
-        var scan = findStopButton(in: app, timeout: 3)
+        var scan = findStopButton(in: app, timeout: 5)
         if scan.match == nil {
             // The note window may be closed or hidden. Opening Granola shows it again.
             bringToFront()
@@ -29,7 +29,7 @@ enum GranolaAccessibility {
             return "No Accessibility permission. Grant it to the app that runs this command, then retry."
         }
         guard let app = appElement() else { return "Granola is not running." }
-        let scan = findStopButton(in: app, timeout: 3, collectAll: true)
+        let scan = findStopButton(in: app, timeout: 5, collectAll: true)
         var lines = ["\(scan.elements.count) buttons, stop button match: \(scan.match.map { "#\($0)" } ?? "none")"]
         for (index, candidate) in scan.candidates.enumerated() {
             let button = candidate.button
@@ -54,7 +54,7 @@ enum GranolaAccessibility {
         }
         let element = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(element, 2)
-        // Electron builds the web content's accessibility tree only when asked to.
+        // Electron builds the web content's accessibility tree only when asked to, after a 2 s debounce.
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         return element
     }

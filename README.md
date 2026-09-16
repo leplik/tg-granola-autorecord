@@ -51,8 +51,8 @@ Requires macOS 14.4 or later and the [Granola desktop app](https://granola.ai).
 
 ## Set up
 
-1. **Open Telegram-Granola Autorecord** from Applications. It turns on its background agent and shows what is still missing. There is no window or menu bar icon after that.
-2. **Allow notifications** when macOS asks. Notifications carry the Stop Recording button and all error messages.
+1. **Open Telegram-Granola Autorecord** from Applications. It adds itself to Login Items and shows a checklist of what is still missing. After that it runs in the background, with no window or menu bar icon. Open it again at any time to see the checklist or turn it off.
+2. **Allow notifications.** They carry the Stop Recording button and every warning. If macOS does not ask, use **Open Notification Settings** in the checklist, then check with `tg-granola-autorecord test-notification`.
 3. **Allow Accessibility access** in **System Settings → Privacy & Security → Accessibility**. The app needs it to press Granola's stop button when a call ends. Without it, recordings start but do not stop by themselves.
 
 Check everything at once:
@@ -127,14 +127,15 @@ Homebrew puts `tg-granola-autorecord` on your `PATH`. For a manual install, the 
 |---|---|
 | `doctor` | Checks the setup and prints a report. Paste it into bug reports. |
 | `monitor` | Shows live what the call detector sees, without touching Granola. |
-| `enable`, `disable` | Turns the background agent on or off. |
-| `restart` | Restarts the agent, for example after editing settings. |
-| `start`, `stop` | Starts or stops a Granola recording right now, the way the agent would. |
+| `enable`, `disable` | Turns the app on, or quits it and removes it from Login Items. |
+| `restart` | Restarts the app, for example after editing settings. |
+| `test-notification` | Sends a notification, to check that notifications are allowed. |
+| `start`, `stop` | Starts or stops a Granola recording right now, the way the app would. |
 | `ax-dump` | Lists the buttons Granola exposes to Accessibility. Useful after a Granola update. |
 
 ## Troubleshooting
 
-Start with `tg-granola-autorecord doctor`. It checks macOS, the agent, permissions, Granola, Telegram and your settings, and shows the latest log lines.
+Start with `tg-granola-autorecord doctor`. It checks macOS, the app, permissions, Granola, Telegram and your settings, and shows the latest log lines.
 
 - **A call does not start a recording.** Run `tg-granola-autorecord monitor` during a call. It should show `call signal: full`. If it does, check that Granola is signed in and can record on its own.
 - **A recording does not stop.** Check Accessibility access. If it is on and Granola was updated recently, run `tg-granola-autorecord ax-dump` during a recording and open a [Granola update issue](https://github.com/leplik/tg-granola-autorecord/issues/new?template=granola_update.yml).
@@ -156,11 +157,14 @@ When something breaks, the failure is visible: a recording that does not start, 
 
 ## Uninstall
 
+Turn the app off first, so that it leaves Login Items:
+
 ```sh
+tg-granola-autorecord disable
 brew uninstall --cask --zap tg-granola-autorecord
 ```
 
-For a manual install, run `tg-granola-autorecord disable`, then delete the app. Remove its entry from **Accessibility** in System Settings by hand.
+For a manual install, run the same `disable` command, or open the app and choose **Turn Off**, then delete the app. Remove its entry from **Accessibility** in System Settings by hand.
 
 ## Contributing
 

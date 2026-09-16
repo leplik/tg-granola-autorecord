@@ -8,14 +8,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- Background app that starts a Granola recording when a Telegram call begins and stops it when the call ends.
+- Login item app that starts a Granola recording when a Telegram call begins and stops it when the call ends.
+- Setup checklist when the app is opened, with shortcuts to Accessibility, Notifications and Login Items settings, and a Turn Off button.
 - Supports Telegram Desktop from telegram.org and the Mac App Store, and the native Telegram for macOS client.
 - Notification with a **Stop Recording** button when a recording starts.
 - Two stop routes: Granola's Meet extension socket when Granola allows it, then the stop button through Accessibility.
 - Notifications when Granola is missing, a recording does not start, a recording cannot be stopped, or Granola stops a recording on its own.
 - Leaves recordings it did not start alone, and does not restart a recording the user stopped.
 - Resumes responsibility for its recording after a restart.
-- `doctor`, `monitor`, `enable`, `disable`, `restart`, `start`, `stop` and `ax-dump` commands.
+- `doctor`, `monitor`, `enable`, `disable`, `restart`, `start`, `stop`, `test-notification` and `ax-dump` commands.
 - Signed and notarized universal build, GitHub Releases and a Homebrew cask.
 
 [Unreleased]: https://github.com/leplik/tg-granola-autorecord/compare/v1.0.0...HEAD

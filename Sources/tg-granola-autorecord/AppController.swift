@@ -2,12 +2,12 @@ import AppKit
 import AutorecordCore
 import Foundation
 
-/// The long-running agent process: an accessory app with no UI that ticks the core agent once a second.
-final class AgentController {
+/// The running app: no windows, a status alert when opened, and the core agent ticking once a second.
+final class AppController: NSObject, NSApplicationDelegate {
     private let paths: Paths
     private let queue = DispatchQueue(label: "\(Product.bundleID).agent")
-    private var notifications: Notifications!
-    private var agent: Agent!
+    private lazy var notifications = Notifications { [weak self] action in self?.handle(action) }
+    private var agent: Agent?
     private var timer: DispatchSourceTimer?
     private let startedAt = Date()
     private var notificationsAllowed: Bool?
@@ -19,23 +19,76 @@ final class AgentController {
         self.paths = paths
     }
 
-    func run() -> Never {
+    static func run(paths: Paths) -> Never {
+        let app = NSApplication.shared
+        let controller = AppController(paths: paths)
+        app.delegate = controller
+        app.setActivationPolicy(.accessory)
+        app.run()
+        exit(0)
+    }
+
+    // MARK: NSApplicationDelegate
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
         Log.useFile(paths.log)
+        // The notification delegate must be in place before launching finishes, so that
+        // a tap on a notification action that launched the app still reaches it.
+        notifications.activate()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard SingleInstance.acquire(at: paths.lock) else {
+            Log.info("another copy is already running, quitting this one")
+            NSApp.terminate(nil)
+            return
+        }
         Log.info("\(Product.name) \(Product.version) started, pid \(ProcessInfo.processInfo.processIdentifier)")
 
-        let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
-
-        notifications = Notifications { [weak self] action in self?.handle(action) }
-        notifications.activate()
-
-        let config = loadConfig()
-        Log.info("watching \(config.apps.joined(separator: ", "))")
-
-        if !GranolaAccessibility.isTrusted(prompt: true) {
-            Log.warn("no Accessibility permission yet: stopping by button stays off until it is granted")
+        guard StatusAlert.isInApplicationsFolder() else {
+            Log.warn("not in Applications: \(Bundle.main.bundlePath)")
+            StatusAlert.askToMoveToApplications()
+            NSApp.terminate(nil)
+            return
         }
 
+        if Preferences.turnedOffByUser {
+            guard StatusAlert.offerToTurnOn() else {
+                NSApp.terminate(nil)
+                return
+            }
+            Preferences.turnedOffByUser = false
+            Log.info("turned on by the user")
+        }
+
+        let registrationError = LoginItem.ensureRegistered()
+        if let registrationError {
+            Log.warn("could not add the login item: \(registrationError.localizedDescription)")
+        }
+        startAgent()
+
+        let firstRun = !Preferences.hasCompletedFirstRun
+        Preferences.hasCompletedFirstRun = true
+        let report = SetupReport.current(registrationError: registrationError)
+        if firstRun || report.hasProblems {
+            DispatchQueue.main.async { self.presentStatus(report) }
+        }
+    }
+
+    /// Opening the app again while it runs shows the status.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        presentStatus(SetupReport.current())
+        return false
+    }
+
+    // MARK: Agent
+
+    private func startAgent() {
+        let config = loadConfig()
+        Log.info("watching \(config.apps.joined(separator: ", "))")
+        if !GranolaAccessibility.isTrusted(prompt: false) {
+            Log.warn("no Accessibility access yet: stopping by button stays off until it is allowed")
+        }
         let granola = GranolaApp(config: config, homeDirectory: paths.homeDirectory)
         queue.async {
             self.agent = Agent(
@@ -48,11 +101,12 @@ final class AgentController {
                 time: SystemTime(),
                 log: Log.info
             )
-            self.scheduleTicks()
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now(), repeating: .seconds(1), leeway: .milliseconds(200))
+            timer.setEventHandler { [weak self] in self?.tick() }
+            timer.resume()
+            self.timer = timer
         }
-
-        app.run()
-        exit(0)
     }
 
     private func loadConfig() -> Config {
@@ -69,16 +123,8 @@ final class AgentController {
         }
     }
 
-    private func scheduleTicks() {
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: .seconds(1), leeway: .milliseconds(200))
-        timer.setEventHandler { [weak self] in self?.tick() }
-        timer.resume()
-        self.timer = timer
-    }
-
     private func tick() {
-        agent.tick()
+        agent?.tick()
         afterAgentWork()
     }
 
@@ -86,7 +132,7 @@ final class AgentController {
         switch action {
         case .stopRecording:
             queue.async {
-                self.agent.requestStop()
+                self.agent?.requestStop()
                 self.afterAgentWork()
             }
         case .openGranola:
@@ -98,8 +144,25 @@ final class AgentController {
         }
     }
 
+    private func presentStatus(_ report: SetupReport) {
+        guard StatusAlert.show(report) == .turnOff else { return }
+        Log.info("turned off by the user")
+        Preferences.turnedOffByUser = true
+        do {
+            try LoginItem.service.unregister()
+        } catch {
+            Log.warn("could not remove the login item: \(error.localizedDescription)")
+        }
+        queue.sync {
+            timer?.cancel()
+            FileOwnedRecordingStore(url: paths.ownedRecording).save(nil)
+        }
+        NSApp.terminate(nil)
+    }
+
     /// Runs on the agent queue after anything that may change the agent's state.
     private func afterAgentWork() {
+        guard let agent else { return }
         let owns = agent.tracker.ownedRecordingStartedAt != nil
         if hadOwnedRecording && !owns {
             notifications.removeRecordingNotification()
@@ -114,10 +177,6 @@ final class AgentController {
         notifications.checkAllowed { [weak self] allowed in
             self?.queue.async { self?.notificationsAllowed = allowed }
         }
-        writeStatus(phase: phase, now: now)
-    }
-
-    private func writeStatus(phase: CallTracker.Phase, now: Date) {
         let status = AgentStatus(
             version: Product.version,
             pid: ProcessInfo.processInfo.processIdentifier,
@@ -137,7 +196,7 @@ final class AgentController {
     }
 }
 
-/// Keeps the start time of the recording the agent is responsible for across restarts.
+/// Keeps the start time of the recording the app is responsible for across restarts.
 struct FileOwnedRecordingStore: OwnedRecordingStore {
     let url: URL
 

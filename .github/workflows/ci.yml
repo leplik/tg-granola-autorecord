@@ -33,6 +33,6 @@ jobs:
       - name: Check the bundle
         run: |
           APP=".build/ci/Telegram-Granola Autorecord.app"
-          plutil -lint "$APP/Contents/Info.plist" "$APP/Contents/Library/LaunchAgents/"*.plist
+          plutil -lint "$APP/Contents/Info.plist"
           codesign --verify --strict --verbose=2 "$APP"
           "$APP/Contents/MacOS/tg-granola-autorecord" --version

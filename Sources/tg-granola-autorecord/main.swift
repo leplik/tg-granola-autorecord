@@ -1,5 +1,6 @@
 import AutorecordCore
 import Foundation
+import UserNotifications
 
 let usage = """
 \(Product.name) \(Product.version)
@@ -9,11 +10,12 @@ usage: \(Product.command) <command>
 
   doctor      check the setup and print a report to paste into bug reports
   monitor     show what the call detector sees, without touching Granola
-  enable      turn on the background agent (also done by opening the app)
-  disable     turn off the background agent
-  restart     restart the background agent, e.g. after editing the settings file
+  enable      turn the app on: start it now and at every login
+  disable     turn the app off: quit it and stop starting it at login
+  restart     restart the app, e.g. after editing the settings file
   start       start a Granola recording now, as on call start
   stop        stop the recording now, as on call end
+  test-notification  send a notification, to check that they are allowed
   ax-dump     list the buttons Granola exposes to Accessibility
   version     print the version
 
@@ -65,17 +67,11 @@ guard arguments.count <= 1 else {
 
 switch arguments.first {
 case nil:
-    // Opened from Finder or `open`: no terminal attached.
+    // Started by LaunchServices (Finder, `open`, login) has no terminal attached.
     if isatty(STDIN_FILENO) == 0 && isatty(STDOUT_FILENO) == 0 {
-        Setup.run()
+        AppController.run(paths: paths)
     }
     print(usage)
-
-case "agent":
-    AgentController(paths: paths).run()
-
-case "setup":
-    Setup.run()
 
 case "doctor":
     exit(Doctor.run(paths: paths))
@@ -85,20 +81,27 @@ case "monitor":
 
 case "enable":
     runOrExit {
-        try LoginItem.service.register()
-        print("Background agent: \(LoginItem.describe(LoginItem.service.status)).")
+        Preferences.turnedOffByUser = false
+        if let error = LoginItem.ensureRegistered() { throw error }
+        if RunningApp.pids().isEmpty { try RunningApp.launch() }
+        print("On: \(LoginItem.describe(LoginItem.service.status)).")
     }
 
 case "disable":
     runOrExit {
-        try LoginItem.service.unregister()
-        print("Background agent turned off.")
+        Preferences.turnedOffByUser = true
+        RunningApp.stop()
+        if LoginItem.service.status != .notRegistered && LoginItem.service.status != .notFound {
+            try LoginItem.service.unregister()
+        }
+        print("Off: the app is not running and does not start at login.")
     }
 
 case "restart":
     runOrExit {
-        try LoginItem.restart()
-        print("Background agent restarted.")
+        RunningApp.stop()
+        try RunningApp.launch()
+        print("Restarted.")
     }
 
 case "start":
@@ -111,6 +114,17 @@ case "stop":
     let outcome = StopSequence(routes: granola, time: SystemTime(), log: Log.info).run(recordingStartedAt: .distantPast)
     print(outcome)
     if case .failed = outcome { exit(1) }
+
+case "test-notification":
+    let semaphore = DispatchSemaphore(value: 0)
+    let content = UNMutableNotificationContent()
+    content.title = "Test notification"
+    content.body = "Notifications from \(Product.name) work."
+    UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test", content: content, trigger: nil)) { error in
+        print(error.map { "could not show the notification: \($0.localizedDescription)" } ?? "Sent a test notification.")
+        semaphore.signal()
+    }
+    _ = semaphore.wait(timeout: .now() + 5)
 
 case "ax-dump":
     print(GranolaAccessibility.dump())
