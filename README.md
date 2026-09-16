@@ -94,7 +94,7 @@ sequenceDiagram
 | Granola briefly drops the microphone, for example when a headset switches profile | Ignores dropouts shorter than 15 seconds. |
 | The call drops and reconnects within 20 seconds | Keeps it as one recording. |
 | You mute your microphone | Keeps recording while Telegram still plays the other side. |
-| You record a voice message | Nothing: only the microphone is in use. |
+| You record a voice message | Normally nothing, because only the microphone is in use. If Telegram also plays sound for more than five seconds meanwhile, it can look like a call; raise `startDelaySeconds` if that happens. |
 | Granola is not running | Opens it in the background. |
 | Granola takes more than 45 seconds to start recording | Tells you. If the recording starts within three minutes after all, the app still stops it when the call ends. |
 | Granola is missing or signed out | Tells you. |
