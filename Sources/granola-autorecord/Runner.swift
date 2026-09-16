@@ -24,7 +24,7 @@ struct Runner {
             let signal = AudioSignals.callSignal(snapshot, watchedApps: watchedApps)
             let recording = AudioSignals.isGranolaRecording(snapshot)
             let command = tracker.step(now: Date(), signal: signal, granolaRecording: recording)
-            logTransition(from: &loggedPhase, to: tracker.phase, signal: signal, recording: recording)
+            logTransition(from: &loggedPhase, to: tracker.phase, context: "call signal: \(signal.rawValue), Granola recording: \(recording)")
 
             switch command {
             case .startRecording?:
@@ -37,7 +37,8 @@ struct Runner {
             case nil:
                 break
             }
-            logTransition(from: &loggedPhase, to: tracker.phase, signal: signal, recording: recording)
+            // The observation above is stale once a command has run, so log the new phase on its own.
+            logTransition(from: &loggedPhase, to: tracker.phase, context: nil)
             Thread.sleep(forTimeInterval: 1)
         }
     }
@@ -62,9 +63,9 @@ struct Runner {
         }
     }
 
-    private func logTransition(from logged: inout CallTracker.Phase, to phase: CallTracker.Phase, signal: CallSignal, recording: Bool) {
+    private func logTransition(from logged: inout CallTracker.Phase, to phase: CallTracker.Phase, context: String?) {
         guard phase != logged else { return }
-        Log.info("\(logged) -> \(phase) (call signal: \(signal.rawValue), Granola recording: \(recording))")
+        Log.info("\(logged) -> \(phase)" + (context.map { " (\($0))" } ?? ""))
         logged = phase
     }
 }
