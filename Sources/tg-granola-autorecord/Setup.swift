@@ -9,6 +9,21 @@ enum Setup {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
+        guard isInApplicationsFolder() else {
+            let alert = NSAlert()
+            alert.messageText = "Move \(Product.name) to Applications"
+            alert.informativeText = """
+            The background agent starts from wherever the app is, so the app has to stay in the Applications folder. \
+            Move it there, then open it again.
+
+            Now running from: \(Bundle.main.bundlePath)
+            """
+            alert.addButton(withTitle: "Quit")
+            app.activate(ignoringOtherApps: true)
+            alert.runModal()
+            exit(1)
+        }
+
         var problems: [String] = []
         let service = LoginItem.service
         if service.status != .enabled {
@@ -62,6 +77,13 @@ enum Setup {
         let index = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
         if buttons.indices.contains(index) { buttons[index]() }
         exit(0)
+    }
+
+    /// Also rejects App Translocation, where macOS runs a downloaded app from a random read-only path.
+    static func isInApplicationsFolder() -> Bool {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        let userApplications = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+        return path.hasPrefix("/Applications/") || path.hasPrefix(userApplications + "/")
     }
 
     private static func check(_ ok: Bool, _ text: String, missing: String) -> String {

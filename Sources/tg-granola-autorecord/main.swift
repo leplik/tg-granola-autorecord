@@ -21,6 +21,21 @@ settings: ~/.config/\(Product.command)/config.json
 log:      ~/Library/Logs/\(Product.command).log
 """
 
+/// Homebrew links the command into its bin directory. Called through that symlink, `Bundle.main` is the
+/// bin directory instead of the app, and ServiceManagement cannot find the agent. Re-run from the bundle.
+func reexecFromAppBundleIfNeeded() {
+    guard Bundle.main.bundleURL.pathExtension != "app", let invoked = Bundle.main.executableURL else { return }
+    let real = invoked.resolvingSymlinksInPath()
+    guard real.path != invoked.path, real.path.contains(".app/Contents/MacOS/") else { return }
+    var cArguments: [UnsafeMutablePointer<CChar>?] = [strdup(real.path)]
+    cArguments += CommandLine.arguments.dropFirst().map { strdup($0) }
+    cArguments.append(nil)
+    execv(real.path, cArguments)
+    // execv only returns on failure; carry on from here.
+}
+
+reexecFromAppBundleIfNeeded()
+
 let paths = Paths(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
 // LaunchServices used to pass a -psn_ argument; ignore it if it appears.
 let arguments = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }

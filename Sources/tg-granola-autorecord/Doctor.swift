@@ -33,6 +33,7 @@ enum Doctor {
         }
 
         section("App")
+        line(.info, "this command runs from \(Bundle.main.bundlePath)")
         if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Product.bundleID) {
             line(.ok, "installed at \(appURL.path)")
         } else {
