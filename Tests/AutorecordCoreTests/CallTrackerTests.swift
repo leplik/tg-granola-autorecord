@@ -6,135 +6,205 @@ final class CallTrackerTests: XCTestCase {
 
     private func at(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
 
-    private func makeTracker(startDelay: TimeInterval = 5, endGrace: TimeInterval = 20) -> CallTracker {
-        CallTracker(startDelay: startDelay, endGrace: endGrace)
+    private func observe(
+        _ tracker: inout CallTracker,
+        _ seconds: TimeInterval,
+        _ signal: CallSignal,
+        granola: Bool,
+        frontmost: Bool = false
+    ) -> [TrackerAction] {
+        tracker.step(Observation(now: at(seconds), signal: signal, granolaRecording: granola, granolaFrontmost: frontmost))
     }
 
-    /// Drives the tracker into `.recording` as if a call started at t0 and Granola started at t0+6.
-    private func recordingTracker() -> CallTracker {
-        var tracker = makeTracker()
-        XCTAssertNil(tracker.step(now: at(0), signal: .full, granolaRecording: false))
-        XCTAssertEqual(tracker.step(now: at(5), signal: .full, granolaRecording: false), .startRecording)
+    private func makeTracker(startDelay: TimeInterval = 5, endGrace: TimeInterval = 20, granolaStopGrace: TimeInterval = 5) -> CallTracker {
+        CallTracker(startDelay: startDelay, endGrace: endGrace, granolaStopGrace: granolaStopGrace)
+    }
+
+    /// A tracker that started a recording at t0+6 for a call that began at t0.
+    private func recordingTracker(granolaStopGrace: TimeInterval = 5) -> CallTracker {
+        var tracker = makeTracker(granolaStopGrace: granolaStopGrace)
+        XCTAssertEqual(observe(&tracker, 0, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
         tracker.startSucceeded(at: at(6))
         XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
         return tracker
     }
 
+    // MARK: Starting
+
     func testStartsAfterDelayWhenMicAndSpeakerStayOpen() {
         var tracker = makeTracker()
-        XCTAssertNil(tracker.step(now: at(0), signal: .full, granolaRecording: false))
-        XCTAssertNil(tracker.step(now: at(4.9), signal: .full, granolaRecording: false))
-        XCTAssertEqual(tracker.step(now: at(5), signal: .full, granolaRecording: false), .startRecording)
+        XCTAssertEqual(observe(&tracker, 0, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 4.9, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
         XCTAssertEqual(tracker.phase, .awaitingStart)
     }
 
     func testZeroDelayStartsOnFirstObservation() {
         var tracker = makeTracker(startDelay: 0)
-        XCTAssertEqual(tracker.step(now: at(0), signal: .full, granolaRecording: false), .startRecording)
+        XCTAssertEqual(observe(&tracker, 0, .full, granola: false), [.startRecording])
     }
 
     func testPartialSignalNeverStartsRecording() {
         var tracker = makeTracker()
         for second in 0..<60 {
-            XCTAssertNil(tracker.step(now: at(TimeInterval(second)), signal: .partial, granolaRecording: false))
+            XCTAssertEqual(observe(&tracker, TimeInterval(second), .partial, granola: false), [])
         }
         XCTAssertEqual(tracker.phase, .idle)
     }
 
     func testBlipShorterThanDelayResetsCountdown() {
         var tracker = makeTracker()
-        XCTAssertNil(tracker.step(now: at(0), signal: .full, granolaRecording: false))
-        XCTAssertNil(tracker.step(now: at(3), signal: .partial, granolaRecording: false))
+        _ = observe(&tracker, 0, .full, granola: false)
+        _ = observe(&tracker, 3, .partial, granola: false)
         XCTAssertEqual(tracker.phase, .idle)
-        XCTAssertNil(tracker.step(now: at(4), signal: .full, granolaRecording: false))
-        XCTAssertNil(tracker.step(now: at(8), signal: .full, granolaRecording: false))
-        XCTAssertEqual(tracker.step(now: at(9), signal: .full, granolaRecording: false), .startRecording)
+        _ = observe(&tracker, 4, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 8, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 9, .full, granola: false), [.startRecording])
     }
 
     func testDoesNotStartWhenGranolaIsAlreadyRecording() {
         var tracker = makeTracker()
-        XCTAssertNil(tracker.step(now: at(0), signal: .full, granolaRecording: true))
-        XCTAssertNil(tracker.step(now: at(5), signal: .full, granolaRecording: true))
+        _ = observe(&tracker, 0, .full, granola: true)
+        XCTAssertEqual(observe(&tracker, 5, .full, granola: true), [])
         XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
     }
 
     func testNeverStopsARecordingItDidNotStart() {
         var tracker = makeTracker()
-        _ = tracker.step(now: at(0), signal: .full, granolaRecording: true)
-        _ = tracker.step(now: at(5), signal: .full, granolaRecording: true)
+        _ = observe(&tracker, 0, .full, granola: true)
+        _ = observe(&tracker, 5, .full, granola: true)
         for second in 6..<120 {
-            XCTAssertNil(tracker.step(now: at(TimeInterval(second)), signal: .none, granolaRecording: true))
+            XCTAssertEqual(observe(&tracker, TimeInterval(second), .none, granola: true), [])
         }
         XCTAssertEqual(tracker.phase, .idle)
     }
 
+    // MARK: Stopping at the end of a call
+
     func testStopsAfterGraceOnceCallGoesSilent() {
         var tracker = recordingTracker()
-        XCTAssertNil(tracker.step(now: at(100), signal: .none, granolaRecording: true))
+        XCTAssertEqual(observe(&tracker, 100, .none, granola: true), [])
         XCTAssertEqual(tracker.phase, .callEnding(since: at(100), recordingStartedAt: at(6)))
-        XCTAssertNil(tracker.step(now: at(119), signal: .none, granolaRecording: true))
-        XCTAssertEqual(tracker.step(now: at(120), signal: .none, granolaRecording: true), .stopRecording(recordingStartedAt: at(6)))
-        XCTAssertEqual(tracker.phase, .awaitingStop)
+        XCTAssertEqual(observe(&tracker, 119, .none, granola: true), [])
+        XCTAssertEqual(observe(&tracker, 120, .none, granola: true), [.stopRecording(recordingStartedAt: at(6))])
+        XCTAssertEqual(tracker.phase, .awaitingStop(recordingStartedAt: at(6), callOver: true))
+        XCTAssertEqual(tracker.ownedRecordingStartedAt, at(6))
         tracker.stopFinished()
         XCTAssertEqual(tracker.phase, .idle)
+        XCTAssertNil(tracker.ownedRecordingStartedAt)
     }
 
     func testPartialSignalKeepsCallAliveWhileMuted() {
         var tracker = recordingTracker()
         for second in 10..<200 {
-            XCTAssertNil(tracker.step(now: at(TimeInterval(second)), signal: .partial, granolaRecording: true))
+            XCTAssertEqual(observe(&tracker, TimeInterval(second), .partial, granola: true), [])
         }
         XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
     }
 
     func testReconnectWithinGraceKeepsOneRecording() {
         var tracker = recordingTracker()
-        XCTAssertNil(tracker.step(now: at(100), signal: .none, granolaRecording: true))
-        XCTAssertNil(tracker.step(now: at(110), signal: .full, granolaRecording: true))
+        _ = observe(&tracker, 100, .none, granola: true)
+        _ = observe(&tracker, 110, .full, granola: true)
         XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
-        XCTAssertNil(tracker.step(now: at(125), signal: .none, granolaRecording: true))
-        XCTAssertNil(tracker.step(now: at(144), signal: .none, granolaRecording: true))
-        XCTAssertEqual(tracker.step(now: at(145), signal: .none, granolaRecording: true), .stopRecording(recordingStartedAt: at(6)))
+        _ = observe(&tracker, 125, .none, granola: true)
+        XCTAssertEqual(observe(&tracker, 144, .none, granola: true), [])
+        XCTAssertEqual(observe(&tracker, 145, .none, granola: true), [.stopRecording(recordingStartedAt: at(6))])
     }
 
-    func testManualStopMidCallIsRespectedUntilCallEnds() {
+    // MARK: Granola stopping on its own or by hand
+
+    func testGranolaStoppingMidCallIsReportedAfterGrace() {
         var tracker = recordingTracker()
-        XCTAssertNil(tracker.step(now: at(50), signal: .full, granolaRecording: false))
+        XCTAssertEqual(observe(&tracker, 50, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 54, .full, granola: false), [])
+        XCTAssertEqual(
+            observe(&tracker, 55, .full, granola: false),
+            [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: false)]
+        )
         XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
-        // Still in the call: no restart.
+    }
+
+    func testFrontmostGranolaAtStopMeansLikelyByUser() {
+        var tracker = recordingTracker(granolaStopGrace: 0)
+        XCTAssertEqual(
+            observe(&tracker, 50, .full, granola: false, frontmost: true),
+            [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: true)]
+        )
+    }
+
+    func testFrontmostIsTakenFromTheMomentGranolaWentQuiet() {
+        var tracker = recordingTracker()
+        _ = observe(&tracker, 50, .full, granola: false, frontmost: true)
+        XCTAssertEqual(
+            observe(&tracker, 55, .full, granola: false, frontmost: false),
+            [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: true)]
+        )
+    }
+
+    func testBriefGranolaDropoutIsIgnored() {
+        var tracker = recordingTracker()
+        _ = observe(&tracker, 50, .full, granola: false)
+        _ = observe(&tracker, 53, .full, granola: false)
+        _ = observe(&tracker, 54, .full, granola: true)
+        XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
+        XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
+    }
+
+    func testManualStopIsRespectedUntilCallEnds() {
+        var tracker = recordingTracker(granolaStopGrace: 0)
+        _ = observe(&tracker, 50, .full, granola: false, frontmost: true)
         for second in 51..<100 {
-            XCTAssertNil(tracker.step(now: at(TimeInterval(second)), signal: .full, granolaRecording: false))
+            XCTAssertEqual(observe(&tracker, TimeInterval(second), .full, granola: false), [])
         }
-        // Short silence then audio again: still the same call.
-        XCTAssertNil(tracker.step(now: at(100), signal: .none, granolaRecording: false))
-        XCTAssertNil(tracker.step(now: at(110), signal: .full, granolaRecording: false))
+        _ = observe(&tracker, 100, .none, granola: false)
+        _ = observe(&tracker, 110, .full, granola: false)
         XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
-        // Call really ends.
-        XCTAssertNil(tracker.step(now: at(200), signal: .none, granolaRecording: false))
-        XCTAssertNil(tracker.step(now: at(220), signal: .none, granolaRecording: false))
+        _ = observe(&tracker, 200, .none, granola: false)
+        _ = observe(&tracker, 220, .none, granola: false)
         XCTAssertEqual(tracker.phase, .idle)
-        // The next call records again.
-        XCTAssertNil(tracker.step(now: at(300), signal: .full, granolaRecording: false))
-        XCTAssertEqual(tracker.step(now: at(305), signal: .full, granolaRecording: false), .startRecording)
+        _ = observe(&tracker, 300, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 305, .full, granola: false), [.startRecording])
     }
 
-    func testRecordingStoppedDuringGraceSkipsStopCommand() {
+    func testStopDuringCallEndingIsNotReported() {
         var tracker = recordingTracker()
-        XCTAssertNil(tracker.step(now: at(100), signal: .none, granolaRecording: true))
-        XCTAssertNil(tracker.step(now: at(105), signal: .none, granolaRecording: false))
+        _ = observe(&tracker, 100, .none, granola: true)
+        _ = observe(&tracker, 105, .none, granola: false)
+        XCTAssertEqual(observe(&tracker, 110, .none, granola: false), [])
         XCTAssertEqual(tracker.phase, .notOurs(quietSince: at(100)))
-        XCTAssertNil(tracker.step(now: at(120), signal: .none, granolaRecording: false))
+        _ = observe(&tracker, 120, .none, granola: false)
         XCTAssertEqual(tracker.phase, .idle)
+    }
+
+    // MARK: User requests and feedback
+
+    func testStopRequestedByUserMidCall() {
+        var tracker = recordingTracker()
+        XCTAssertEqual(tracker.stopRequestedByUser(), .stopRecording(recordingStartedAt: at(6)))
+        XCTAssertEqual(tracker.phase, .awaitingStop(recordingStartedAt: at(6), callOver: false))
+        XCTAssertNil(tracker.stopRequestedByUser())
+        tracker.stopFinished()
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
+    }
+
+    func testStopRequestedWithoutOwnRecordingDoesNothing() {
+        var tracker = makeTracker()
+        XCTAssertNil(tracker.stopRequestedByUser())
+        _ = observe(&tracker, 0, .full, granola: true)
+        _ = observe(&tracker, 5, .full, granola: true)
+        XCTAssertNil(tracker.stopRequestedByUser())
     }
 
     func testFailedStartWaitsForCallToEnd() {
         var tracker = makeTracker()
-        _ = tracker.step(now: at(0), signal: .full, granolaRecording: false)
-        XCTAssertEqual(tracker.step(now: at(5), signal: .full, granolaRecording: false), .startRecording)
+        _ = observe(&tracker, 0, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
         tracker.startFailed()
         XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
-        XCTAssertNil(tracker.step(now: at(60), signal: .full, granolaRecording: false))
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
     }
 
     func testFeedbackIsIgnoredInUnexpectedPhases() {
@@ -145,11 +215,18 @@ final class CallTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.phase, .idle)
     }
 
-    func testNoCommandsWhileAwaitingResults() {
+    func testNoActionsWhileAwaitingResults() {
         var tracker = makeTracker()
-        _ = tracker.step(now: at(0), signal: .full, granolaRecording: false)
-        _ = tracker.step(now: at(5), signal: .full, granolaRecording: false)
-        XCTAssertNil(tracker.step(now: at(6), signal: .none, granolaRecording: false))
+        _ = observe(&tracker, 0, .full, granola: false)
+        _ = observe(&tracker, 5, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 6, .none, granola: false), [])
         XCTAssertEqual(tracker.phase, .awaitingStart)
+    }
+
+    func testRestoredTrackerOwnsTheRecording() {
+        var tracker = CallTracker(startDelay: 5, endGrace: 20, restoredRecordingStartedAt: at(-600))
+        XCTAssertEqual(tracker.ownedRecordingStartedAt, at(-600))
+        _ = observe(&tracker, 0, .none, granola: true)
+        XCTAssertEqual(observe(&tracker, 20, .none, granola: true), [.stopRecording(recordingStartedAt: at(-600))])
     }
 }

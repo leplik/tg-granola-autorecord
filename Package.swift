@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "granola-autorecord",
+    name: "tg-granola-autorecord",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "granola-autorecord", targets: ["granola-autorecord"]),
+        .executable(name: "tg-granola-autorecord", targets: ["tg-granola-autorecord"]),
     ],
     targets: [
         .target(name: "AutorecordCore"),
         .executableTarget(
-            name: "granola-autorecord",
+            name: "tg-granola-autorecord",
             dependencies: ["AutorecordCore"]
         ),
         .testTarget(

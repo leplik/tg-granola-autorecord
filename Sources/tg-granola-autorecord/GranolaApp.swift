@@ -1,11 +1,22 @@
+import AppKit
 import AutorecordCore
 import Darwin
 import Foundation
 
-/// Side effects on the Granola desktop app.
-struct GranolaApp {
+/// The real Granola desktop app, as seen by the agent.
+struct GranolaApp: GranolaLauncher, StopRoutes {
     let config: Config
     let homeDirectory: URL
+
+    // MARK: GranolaLauncher
+
+    func isInstalled() -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: Granola.bundleID) != nil
+    }
+
+    func isFrontmost() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Granola.bundleID
+    }
 
     /// Opens `granola://new-document`, which creates a note and starts transcribing.
     /// `open -g` keeps Granola in the background so the call window keeps focus.
@@ -14,12 +25,10 @@ struct GranolaApp {
         try Shell.run("/usr/bin/open", ["-g", url.absoluteString])
     }
 
-    func bringToFront() {
-        do {
-            try Shell.run("/usr/bin/open", ["-b", Granola.bundleID])
-        } catch {
-            Log.warn("could not bring Granola to the front: \(error)")
-        }
+    // MARK: StopRoutes
+
+    func isGranolaRecording() -> Bool {
+        AudioSignals.isGranolaRecording(AudioProcesses.snapshot())
     }
 
     func isExtensionAutoStopEnabled() -> Bool {
@@ -31,6 +40,26 @@ struct GranolaApp {
     func sendMeetingEnded() throws {
         let path = Granola.meetConsentSocketPath(homeDirectory: homeDirectory.path)
         try UnixSocket.send(Granola.meetingEndedMessage(at: Date()), to: path)
+    }
+
+    func pressStopButton() -> ButtonPressResult {
+        GranolaAccessibility.pressStopButton(bringToFront: bringToFront)
+    }
+
+    // MARK: Helpers
+
+    func bringToFront() {
+        do {
+            try Shell.run("/usr/bin/open", ["-b", Granola.bundleID])
+        } catch {
+            Log.warn("could not bring Granola to the front: \(error)")
+        }
+    }
+
+    /// Granola's version from its Info.plist, if installed.
+    static func installedVersion() -> String? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Granola.bundleID) else { return nil }
+        return Bundle(url: url)?.infoDictionary?["CFBundleShortVersionString"] as? String
     }
 }
 

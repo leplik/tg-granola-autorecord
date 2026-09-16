@@ -132,6 +132,18 @@ final class ConfigTests: XCTestCase {
         XCTAssertThrowsError(try ConfigLoader.decode(Data(#"{"creationSource":""}"#.utf8)))
     }
 
+    func testNotificationsCanBeTurnedOff() throws {
+        XCTAssertFalse(try ConfigLoader.decode(Data(#"{"notifyOnStart":false}"#.utf8)).notifyOnStart)
+        XCTAssertTrue(Config.default.notifyOnStart)
+    }
+
+    func testPathsLiveUnderTheCommandName() {
+        let paths = Paths(homeDirectory: URL(fileURLWithPath: "/Users/someone"))
+        XCTAssertEqual(paths.config.path, "/Users/someone/.config/tg-granola-autorecord/config.json")
+        XCTAssertEqual(paths.log.path, "/Users/someone/Library/Logs/tg-granola-autorecord.log")
+        XCTAssertEqual(paths.status.path, "/Users/someone/Library/Application Support/tg-granola-autorecord/status.json")
+    }
+
     func testMissingFileGivesDefaults() throws {
         let url = URL(fileURLWithPath: "/nonexistent/granola-autorecord/config.json")
         XCTAssertEqual(try ConfigLoader.load(from: url), .default)

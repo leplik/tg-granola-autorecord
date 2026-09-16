@@ -4,29 +4,11 @@ import AutorecordCore
 
 /// Finds and presses Granola's "Stop transcript" button through the Accessibility API.
 enum GranolaAccessibility {
-    enum PressResult: CustomStringConvertible {
-        case pressed
-        case notTrusted
-        case granolaNotRunning
-        case notFound(buttonsSeen: Int)
-        case failed(AXError)
-
-        var description: String {
-            switch self {
-            case .pressed: return "pressed the stop button"
-            case .notTrusted: return "no Accessibility permission"
-            case .granolaNotRunning: return "Granola is not running"
-            case .notFound(let seen): return "no unambiguous stop button among \(seen) buttons"
-            case .failed(let error): return "press failed with AXError \(error.rawValue)"
-            }
-        }
-    }
-
     static func isTrusted(prompt: Bool) -> Bool {
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary)
     }
 
-    static func pressStopButton(bringToFront: () -> Void) -> PressResult {
+    static func pressStopButton(bringToFront: () -> Void) -> ButtonPressResult {
         guard isTrusted(prompt: false) else { return .notTrusted }
         guard let app = appElement() else { return .granolaNotRunning }
 
@@ -38,7 +20,7 @@ enum GranolaAccessibility {
         }
         guard let index = scan.match else { return .notFound(buttonsSeen: scan.elements.count) }
         let error = AXUIElementPerformAction(scan.elements[index], kAXPressAction as CFString)
-        return error == .success ? .pressed : .failed(error)
+        return error == .success ? .pressed : .failed(code: error.rawValue)
     }
 
     /// Human-readable list of every button Granola exposes, for checking the matcher against a new Granola version.

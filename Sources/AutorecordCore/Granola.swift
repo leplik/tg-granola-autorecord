@@ -6,6 +6,9 @@ import Foundation
 public enum Granola {
     public static let bundleID = "com.granola.app"
 
+    /// The Granola version whose internals this release was checked against. `doctor` warns about newer ones.
+    public static let testedVersion = "7.568.0"
+
     /// Deep link handled by Granola's `new-document` route. It creates a note and starts
     /// transcription unless `auto_transcribe=0` is passed.
     public static func newNoteURL(creationSource: String) -> URL {
