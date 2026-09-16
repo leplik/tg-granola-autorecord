@@ -21,13 +21,23 @@ public enum TrackerAction: Equatable, Sendable {
     case stopRecording(recordingStartedAt: Date)
     /// Granola stopped a recording this tracker started while the call was still going.
     case recordingStoppedExternally(recordingStartedAt: Date, likelyByUser: Bool)
+    /// A start that had timed out went through after all. The recording is tracked from now on.
+    case recordingStartedLate
 }
 
 /// Pure state machine that turns observations into start and stop actions.
 ///
 /// It only ever stops a recording it started itself. If Granola was already recording when the call
-/// began, or the recording was stopped by someone else, it stands aside until the call is over.
+/// began, or the user stopped the recording, it stands aside until the call is over.
 public struct CallTracker: Sendable {
+    /// A recording that is not running now but belongs to this tracker if Granola records again during the call.
+    public enum Claim: Equatable, Sendable {
+        /// Granola stopped our recording without the user, e.g. to ask for consent.
+        case lostRecording(startedAt: Date)
+        /// Granola did not start in time, but the deep link may still take effect.
+        case pendingStart(since: Date)
+    }
+
     public enum Phase: Equatable, Sendable {
         case idle
         /// Microphone and speaker are both open; waiting out `startDelay`.
@@ -40,16 +50,18 @@ public struct CallTracker: Sendable {
         case callEnding(since: Date, recordingStartedAt: Date)
         /// The stop action is out; waiting for `stopFinished`. `callOver` is false when the user asked to stop mid-call.
         case awaitingStop(recordingStartedAt: Date, callOver: Bool)
-        /// A call is in progress, but no recording of ours is. `quietSince` is set once the call goes silent.
-        case notOurs(quietSince: Date?)
+        /// A call is in progress, but no recording of ours is running. `quietSince` is set once the call goes silent.
+        case notOurs(quietSince: Date?, claim: Claim?)
     }
 
     public private(set) var phase: Phase
     public let startDelay: TimeInterval
     public let endGrace: TimeInterval
-    /// How long Granola must stay off the microphone before it counts as stopped.
-    /// Granola briefly releases the microphone when it restarts its audio process or the input device changes.
+    /// How long Granola must stay off the microphone before it counts as stopped mid-call.
+    /// Granola briefly releases the microphone when its audio process restarts or a headset switches profile.
     public let granolaStopGrace: TimeInterval
+    /// How long after a timed-out start a recording that Granola starts late still counts as ours.
+    public let lateStartWindow: TimeInterval
 
     private struct GranolaQuiet: Equatable, Sendable {
         var since: Date
@@ -61,12 +73,14 @@ public struct CallTracker: Sendable {
     public init(
         startDelay: TimeInterval,
         endGrace: TimeInterval,
-        granolaStopGrace: TimeInterval = 5,
+        granolaStopGrace: TimeInterval = 15,
+        lateStartWindow: TimeInterval = 180,
         restoredRecordingStartedAt: Date? = nil
     ) {
         self.startDelay = startDelay
         self.endGrace = endGrace
         self.granolaStopGrace = granolaStopGrace
+        self.lateStartWindow = lateStartWindow
         self.phase = restoredRecordingStartedAt.map { .recording(startedAt: $0) } ?? .idle
     }
 
@@ -97,13 +111,13 @@ public struct CallTracker: Sendable {
         phase = .recording(startedAt: date)
     }
 
-    /// Granola did not start recording. Stay out of the way until this call is over.
-    public mutating func startFailed() {
+    /// Granola did not start recording. With `mayStillStart`, a recording Granola starts later in this call is claimed.
+    public mutating func startFailed(at date: Date, mayStillStart: Bool) {
         guard phase == .awaitingStart else { return }
-        phase = .notOurs(quietSince: nil)
+        phase = .notOurs(quietSince: nil, claim: mayStillStart ? .pendingStart(since: date) : nil)
     }
 
-    /// The user asked to stop, e.g. from the notification. Returns the action to run, if there is anything to stop.
+    /// The user asked to stop, e.g. from the notification. Returns the action to run, if the tracker owns a recording.
     public mutating func stopRequestedByUser() -> TrackerAction? {
         switch phase {
         case .recording(let startedAt), .callEnding(_, let startedAt):
@@ -115,10 +129,22 @@ public struct CallTracker: Sendable {
         }
     }
 
+    /// The user stopped a recording this tracker does not own. Start nothing, and claim nothing, until the call ends.
+    public mutating func holdOffUntilCallEnds() {
+        switch phase {
+        case .idle, .callStarting:
+            phase = .notOurs(quietSince: nil, claim: nil)
+        case .notOurs(let quietSince, _):
+            phase = .notOurs(quietSince: quietSince, claim: nil)
+        case .awaitingStart, .recording, .callEnding, .awaitingStop:
+            break
+        }
+    }
+
     /// Called after a stop attempt, successful or not.
     public mutating func stopFinished() {
         guard case .awaitingStop(_, let callOver) = phase else { return }
-        phase = callOver ? .idle : .notOurs(quietSince: nil)
+        phase = callOver ? .idle : .notOurs(quietSince: nil, claim: nil)
     }
 
     private var isWatchingGranola: Bool {
@@ -144,7 +170,7 @@ public struct CallTracker: Sendable {
             }
             guard now.timeIntervalSince(since) >= startDelay else { return [] }
             if observation.granolaRecording {
-                phase = .notOurs(quietSince: nil)
+                phase = .notOurs(quietSince: nil, claim: nil)
                 return []
             }
             phase = .awaitingStart
@@ -155,18 +181,15 @@ public struct CallTracker: Sendable {
 
         case .recording(let startedAt):
             if let likelyByUser = confirmGranolaStopped(observation) {
-                phase = .notOurs(quietSince: nil)
+                phase = .notOurs(quietSince: nil, claim: likelyByUser ? nil : .lostRecording(startedAt: startedAt))
                 return [.recordingStoppedExternally(recordingStartedAt: startedAt, likelyByUser: likelyByUser)]
             }
             if signal == .none { phase = .callEnding(since: now, recordingStartedAt: startedAt) }
             return []
 
         case .callEnding(let since, let startedAt):
-            if confirmGranolaStopped(observation) != nil {
-                // Stopped while the call was winding down: nothing left to do and nothing worth reporting.
-                phase = .notOurs(quietSince: since)
-                return []
-            }
+            // Granola releasing the microphone now changes nothing: the stop sequence
+            // copes with a recording that has already ended.
             if signal != .none {
                 phase = .recording(startedAt: startedAt)
                 return []
@@ -175,15 +198,31 @@ public struct CallTracker: Sendable {
             phase = .awaitingStop(recordingStartedAt: startedAt, callOver: true)
             return [.stopRecording(recordingStartedAt: startedAt)]
 
-        case .notOurs(let quietSince):
+        case .notOurs(let quietSince, let claim):
+            if let claim, observation.granolaRecording {
+                switch claim {
+                case .lostRecording(let startedAt):
+                    phase = .recording(startedAt: startedAt)
+                    return []
+                case .pendingStart:
+                    phase = .recording(startedAt: now)
+                    return [.recordingStartedLate]
+                }
+            }
+            if case .pendingStart(let since)? = claim, now.timeIntervalSince(since) >= lateStartWindow {
+                phase = .notOurs(quietSince: quietSince, claim: nil)
+                return []
+            }
             if signal != .none {
-                if quietSince != nil { phase = .notOurs(quietSince: nil) }
+                if quietSince != nil { phase = .notOurs(quietSince: nil, claim: claim) }
                 return []
             }
             guard let quietSince else {
-                phase = .notOurs(quietSince: now)
+                phase = .notOurs(quietSince: now, claim: claim)
                 return []
             }
+            // A pending start keeps the phase alive until its window closes, even after the call.
+            if case .pendingStart? = claim { return [] }
             if now.timeIntervalSince(quietSince) >= endGrace { phase = .idle }
             return []
         }
@@ -212,7 +251,13 @@ extension CallTracker.Phase: CustomStringConvertible {
         case .recording: return "recording"
         case .callEnding: return "call-ending"
         case .awaitingStop: return "stopping-granola"
-        case .notOurs(let quietSince): return quietSince == nil ? "not-ours" : "not-ours-quiet"
+        case .notOurs(let quietSince, let claim):
+            let base = quietSince == nil ? "not-ours" : "not-ours-quiet"
+            switch claim {
+            case nil: return base
+            case .lostRecording?: return base + "-reclaimable"
+            case .pendingStart?: return base + "-late-start"
+            }
         }
     }
 }

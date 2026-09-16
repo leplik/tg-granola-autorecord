@@ -108,9 +108,9 @@ enum Doctor {
             return
         }
         let age = Int(Date().timeIntervalSince(status.updatedAt))
-        let alive = kill(status.pid, 0) == 0
-        if alive && age < 60 {
-            line(.ok, "running as pid \(status.pid), state \(status.phase)")
+        if isOurApp(pid: status.pid) {
+            // Starting or stopping a recording can keep the app busy for up to a minute between status updates.
+            line(.ok, "running as pid \(status.pid), state \(status.phase)" + (age > 90 ? ", busy for \(age) s" : ""))
         } else {
             line(.problem, "not running, last seen \(age) s ago: open the app or run `\(Product.command) enable`")
         }
@@ -127,6 +127,14 @@ enum Doctor {
         if let lastEvent = status.lastEvent {
             line(.info, "last event: \(lastEvent)")
         }
+    }
+
+    /// The process ID could have been reused, so also check which executable it runs.
+    private static func isOurApp(pid: pid_t) -> Bool {
+        guard pid > 0, kill(pid, 0) == 0 else { return false }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return false }
+        return String(cString: buffer).hasSuffix("/Contents/MacOS/\(Product.command)")
     }
 
     private static func lastLines(of url: URL, count: Int) -> [String] {

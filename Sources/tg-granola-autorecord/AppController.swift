@@ -14,12 +14,18 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var lastStatusWrite = Date.distantPast
     private var lastPhase: CallTracker.Phase?
     private var hadOwnedRecording = false
+    /// A Stop tap that arrived before the agent existed, e.g. the tap that launched the app.
+    private var pendingStopRequest = false
 
     init(paths: Paths) {
         self.paths = paths
     }
 
     static func run(paths: Paths) -> Never {
+        // LaunchServices keeps one copy running, but `open -n` or a direct launch does not.
+        guard SingleInstance.acquire(at: paths.lock) else { exit(0) }
+        Log.useFile(paths.log)
+
         let app = NSApplication.shared
         let controller = AppController(paths: paths)
         app.delegate = controller
@@ -31,18 +37,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: NSApplicationDelegate
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        Log.useFile(paths.log)
         // The notification delegate must be in place before launching finishes, so that
         // a tap on a notification action that launched the app still reaches it.
         notifications.activate()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard SingleInstance.acquire(at: paths.lock) else {
-            Log.info("another copy is already running, quitting this one")
-            NSApp.terminate(nil)
-            return
-        }
         Log.info("\(Product.name) \(Product.version) started, pid \(ProcessInfo.processInfo.processIdentifier)")
 
         guard StatusAlert.isInApplicationsFolder() else {
@@ -101,6 +101,10 @@ final class AppController: NSObject, NSApplicationDelegate {
                 time: SystemTime(),
                 log: Log.info
             )
+            if self.pendingStopRequest {
+                self.pendingStopRequest = false
+                self.agent?.requestStop()
+            }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now(), repeating: .seconds(1), leeway: .milliseconds(200))
             timer.setEventHandler { [weak self] in self?.tick() }
@@ -132,7 +136,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         switch action {
         case .stopRecording:
             queue.async {
-                self.agent?.requestStop()
+                guard let agent = self.agent else {
+                    self.pendingStopRequest = true
+                    return
+                }
+                agent.requestStop()
                 self.afterAgentWork()
             }
         case .openGranola:
@@ -153,11 +161,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         } catch {
             Log.warn("could not remove the login item: \(error.localizedDescription)")
         }
-        queue.sync {
-            timer?.cancel()
-            FileOwnedRecordingStore(url: paths.ownedRecording).save(nil)
+        // Wait for any start or stop in progress without blocking the main thread.
+        queue.async {
+            self.timer?.cancel()
+            self.agent = nil
+            FileOwnedRecordingStore(url: self.paths.ownedRecording).save(nil)
+            DispatchQueue.main.async { NSApp.terminate(nil) }
         }
-        NSApp.terminate(nil)
     }
 
     /// Runs on the agent queue after anything that may change the agent's state.
@@ -196,27 +206,23 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Keeps the start time of the recording the app is responsible for across restarts.
+/// Keeps the recording the app is responsible for, with its heartbeat, across restarts.
 struct FileOwnedRecordingStore: OwnedRecordingStore {
     let url: URL
 
-    private struct Record: Codable {
-        var recordingStartedAt: Date
-    }
-
-    func load() -> Date? {
+    func load() -> OwnedRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? AgentStatus.decoder().decode(Record.self, from: data).recordingStartedAt
+        return try? AgentStatus.decoder().decode(OwnedRecord.self, from: data)
     }
 
-    func save(_ recordingStartedAt: Date?) {
-        guard let recordingStartedAt else {
+    func save(_ record: OwnedRecord?) {
+        guard let record else {
             try? FileManager.default.removeItem(at: url)
             return
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try AgentStatus.encoder().encode(Record(recordingStartedAt: recordingStartedAt)).write(to: url, options: .atomic)
+            try AgentStatus.encoder().encode(record).write(to: url, options: .atomic)
         } catch {
             Log.warn("could not remember the recording: \(error)")
         }

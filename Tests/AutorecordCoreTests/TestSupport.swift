@@ -34,6 +34,9 @@ final class FakeWorld: AudioSource, GranolaLauncher, StopRoutes {
     var buttonStopsRecording = true
     /// Runs inside `pressStopButton`, e.g. to simulate someone else stopping the recording meanwhile.
     var onButtonPress: (() -> Void)?
+    /// Runs before every `isGranolaRecording` check with the number of checks so far.
+    var onRecordingCheck: ((Int) -> Void)?
+    private(set) var recordingChecks = 0
 
     private(set) var deepLinksOpened = 0
     private(set) var meetingEndedSent = 0
@@ -63,7 +66,11 @@ final class FakeWorld: AudioSource, GranolaLauncher, StopRoutes {
         if startsRecordingOnDeepLink { granolaRecording = true }
     }
 
-    func isGranolaRecording() -> Bool { granolaRecording }
+    func isGranolaRecording() -> Bool {
+        recordingChecks += 1
+        onRecordingCheck?(recordingChecks)
+        return granolaRecording
+    }
     func isExtensionAutoStopEnabled() -> Bool { extensionAutoStopEnabled }
 
     func sendMeetingEnded() throws {
@@ -75,7 +82,12 @@ final class FakeWorld: AudioSource, GranolaLauncher, StopRoutes {
     func pressStopButton() -> ButtonPressResult {
         buttonPresses += 1
         onButtonPress?()
-        if buttonResult == .pressed && buttonStopsRecording { granolaRecording = false }
+        switch buttonResult {
+        case .pressed, .failed:
+            if buttonStopsRecording { granolaRecording = false }
+        case .notTrusted, .granolaNotRunning, .notFound:
+            break
+        }
         return buttonResult
     }
 }
@@ -89,12 +101,12 @@ final class RecordingPresenter: NoticePresenter {
 }
 
 final class MemoryStore: OwnedRecordingStore {
-    var stored: Date?
+    var stored: OwnedRecord?
 
-    func load() -> Date? { stored }
+    func load() -> OwnedRecord? { stored }
 
-    func save(_ recordingStartedAt: Date?) {
-        stored = recordingStartedAt
+    func save(_ record: OwnedRecord?) {
+        stored = record
     }
 }
 

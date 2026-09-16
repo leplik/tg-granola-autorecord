@@ -16,12 +16,23 @@ final class CallTrackerTests: XCTestCase {
         tracker.step(Observation(now: at(seconds), signal: signal, granolaRecording: granola, granolaFrontmost: frontmost))
     }
 
-    private func makeTracker(startDelay: TimeInterval = 5, endGrace: TimeInterval = 20, granolaStopGrace: TimeInterval = 5) -> CallTracker {
+    /// Observes once per second over `range`.
+    private func observe(
+        _ tracker: inout CallTracker,
+        _ range: Range<Int>,
+        _ signal: CallSignal,
+        granola: Bool,
+        frontmost: Bool = false
+    ) -> [TrackerAction] {
+        range.flatMap { observe(&tracker, TimeInterval($0), signal, granola: granola, frontmost: frontmost) }
+    }
+
+    private func makeTracker(startDelay: TimeInterval = 5, endGrace: TimeInterval = 20, granolaStopGrace: TimeInterval = 15) -> CallTracker {
         CallTracker(startDelay: startDelay, endGrace: endGrace, granolaStopGrace: granolaStopGrace)
     }
 
     /// A tracker that started a recording at t0+6 for a call that began at t0.
-    private func recordingTracker(granolaStopGrace: TimeInterval = 5) -> CallTracker {
+    private func recordingTracker(granolaStopGrace: TimeInterval = 15) -> CallTracker {
         var tracker = makeTracker(granolaStopGrace: granolaStopGrace)
         XCTAssertEqual(observe(&tracker, 0, .full, granola: false), [])
         XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
@@ -47,9 +58,7 @@ final class CallTrackerTests: XCTestCase {
 
     func testPartialSignalNeverStartsRecording() {
         var tracker = makeTracker()
-        for second in 0..<60 {
-            XCTAssertEqual(observe(&tracker, TimeInterval(second), .partial, granola: false), [])
-        }
+        XCTAssertEqual(observe(&tracker, 0..<60, .partial, granola: false), [])
         XCTAssertEqual(tracker.phase, .idle)
     }
 
@@ -67,16 +76,14 @@ final class CallTrackerTests: XCTestCase {
         var tracker = makeTracker()
         _ = observe(&tracker, 0, .full, granola: true)
         XCTAssertEqual(observe(&tracker, 5, .full, granola: true), [])
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
     }
 
     func testNeverStopsARecordingItDidNotStart() {
         var tracker = makeTracker()
         _ = observe(&tracker, 0, .full, granola: true)
         _ = observe(&tracker, 5, .full, granola: true)
-        for second in 6..<120 {
-            XCTAssertEqual(observe(&tracker, TimeInterval(second), .none, granola: true), [])
-        }
+        XCTAssertEqual(observe(&tracker, 6..<120, .none, granola: true), [])
         XCTAssertEqual(tracker.phase, .idle)
     }
 
@@ -97,9 +104,7 @@ final class CallTrackerTests: XCTestCase {
 
     func testPartialSignalKeepsCallAliveWhileMuted() {
         var tracker = recordingTracker()
-        for second in 10..<200 {
-            XCTAssertEqual(observe(&tracker, TimeInterval(second), .partial, granola: true), [])
-        }
+        XCTAssertEqual(observe(&tracker, 10..<200, .partial, granola: true), [])
         XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
     }
 
@@ -113,17 +118,47 @@ final class CallTrackerTests: XCTestCase {
         XCTAssertEqual(observe(&tracker, 145, .none, granola: true), [.stopRecording(recordingStartedAt: at(6))])
     }
 
-    // MARK: Granola stopping on its own or by hand
+    func testGranolaDroppingTheMicrophoneAfterTheCallStillEndsInAStop() {
+        var tracker = recordingTracker()
+        _ = observe(&tracker, 100, .none, granola: true)
+        XCTAssertEqual(observe(&tracker, 101..<110, .none, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 110..<120, .none, granola: true), [])
+        XCTAssertEqual(observe(&tracker, 120, .none, granola: true), [.stopRecording(recordingStartedAt: at(6))])
+    }
+
+    func testRecordingThatEndedDuringCallEndingStillGetsAStopAttempt() {
+        var tracker = recordingTracker()
+        _ = observe(&tracker, 100, .none, granola: true)
+        XCTAssertEqual(observe(&tracker, 101..<120, .none, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 120, .none, granola: false), [.stopRecording(recordingStartedAt: at(6))])
+    }
+
+    // MARK: Granola stopping mid-call
 
     func testGranolaStoppingMidCallIsReportedAfterGrace() {
         var tracker = recordingTracker()
-        XCTAssertEqual(observe(&tracker, 50, .full, granola: false), [])
-        XCTAssertEqual(observe(&tracker, 54, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 50..<65, .full, granola: false), [])
         XCTAssertEqual(
-            observe(&tracker, 55, .full, granola: false),
+            observe(&tracker, 65, .full, granola: false),
             [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: false)]
         )
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: .lostRecording(startedAt: at(6))))
+    }
+
+    func testShortMidCallDropoutIsIgnored() {
+        var tracker = recordingTracker()
+        XCTAssertEqual(observe(&tracker, 50..<60, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 60..<100, .full, granola: true), [])
+        XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
+    }
+
+    func testRecordingResumedAfterAnExternalStopIsTrackedAgain() {
+        var tracker = recordingTracker()
+        _ = observe(&tracker, 50..<66, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 90, .full, granola: true), [])
+        XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
+        _ = observe(&tracker, 200, .none, granola: true)
+        XCTAssertEqual(observe(&tracker, 220, .none, granola: true), [.stopRecording(recordingStartedAt: at(6))])
     }
 
     func testFrontmostGranolaAtStopMeansLikelyByUser() {
@@ -132,35 +167,34 @@ final class CallTrackerTests: XCTestCase {
             observe(&tracker, 50, .full, granola: false, frontmost: true),
             [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: true)]
         )
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
     }
 
     func testFrontmostIsTakenFromTheMomentGranolaWentQuiet() {
         var tracker = recordingTracker()
         _ = observe(&tracker, 50, .full, granola: false, frontmost: true)
         XCTAssertEqual(
-            observe(&tracker, 55, .full, granola: false, frontmost: false),
+            observe(&tracker, 51..<66, .full, granola: false, frontmost: false),
             [.recordingStoppedExternally(recordingStartedAt: at(6), likelyByUser: true)]
         )
     }
 
-    func testBriefGranolaDropoutIsIgnored() {
-        var tracker = recordingTracker()
-        _ = observe(&tracker, 50, .full, granola: false)
-        _ = observe(&tracker, 53, .full, granola: false)
-        _ = observe(&tracker, 54, .full, granola: true)
-        XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
-        XCTAssertEqual(tracker.phase, .recording(startedAt: at(6)))
+    func testRecordingRestartedByHandIsNotClaimed() {
+        var tracker = recordingTracker(granolaStopGrace: 0)
+        _ = observe(&tracker, 50, .full, granola: false, frontmost: true)
+        XCTAssertEqual(observe(&tracker, 51..<100, .full, granola: true), [])
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
+        _ = observe(&tracker, 100..<130, .none, granola: true)
+        XCTAssertEqual(tracker.phase, .idle)
     }
 
     func testManualStopIsRespectedUntilCallEnds() {
         var tracker = recordingTracker(granolaStopGrace: 0)
         _ = observe(&tracker, 50, .full, granola: false, frontmost: true)
-        for second in 51..<100 {
-            XCTAssertEqual(observe(&tracker, TimeInterval(second), .full, granola: false), [])
-        }
+        XCTAssertEqual(observe(&tracker, 51..<100, .full, granola: false), [])
         _ = observe(&tracker, 100, .none, granola: false)
         _ = observe(&tracker, 110, .full, granola: false)
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
         _ = observe(&tracker, 200, .none, granola: false)
         _ = observe(&tracker, 220, .none, granola: false)
         XCTAssertEqual(tracker.phase, .idle)
@@ -168,14 +202,50 @@ final class CallTrackerTests: XCTestCase {
         XCTAssertEqual(observe(&tracker, 305, .full, granola: false), [.startRecording])
     }
 
-    func testStopDuringCallEndingIsNotReported() {
-        var tracker = recordingTracker()
-        _ = observe(&tracker, 100, .none, granola: true)
-        _ = observe(&tracker, 105, .none, granola: false)
-        XCTAssertEqual(observe(&tracker, 110, .none, granola: false), [])
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: at(100)))
-        _ = observe(&tracker, 120, .none, granola: false)
+    // MARK: Late starts
+
+    private func timedOutTracker() -> CallTracker {
+        var tracker = makeTracker()
+        _ = observe(&tracker, 0, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
+        tracker.startFailed(at: at(50), mayStillStart: true)
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: .pendingStart(since: at(50))))
+        return tracker
+    }
+
+    func testLateStartDuringTheCallIsClaimed() {
+        var tracker = timedOutTracker()
+        XCTAssertEqual(observe(&tracker, 51..<80, .full, granola: false), [])
+        XCTAssertEqual(observe(&tracker, 80, .full, granola: true), [.recordingStartedLate])
+        XCTAssertEqual(tracker.phase, .recording(startedAt: at(80)))
+    }
+
+    func testLateStartAfterTheCallEndedIsClaimedAndStopped() {
+        var tracker = timedOutTracker()
+        _ = observe(&tracker, 51..<60, .full, granola: false)
+        XCTAssertEqual(observe(&tracker, 60..<150, .none, granola: false), [])
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: at(60), claim: .pendingStart(since: at(50))))
+        XCTAssertEqual(observe(&tracker, 150, .none, granola: true), [.recordingStartedLate])
+        XCTAssertEqual(observe(&tracker, 151..<170, .none, granola: true), [])
+        XCTAssertEqual(observe(&tracker, 171, .none, granola: true), [.stopRecording(recordingStartedAt: at(150))])
+    }
+
+    func testLateStartClaimExpires() {
+        var tracker = timedOutTracker()
+        _ = observe(&tracker, 51..<60, .full, granola: false)
+        _ = observe(&tracker, 60..<231, .none, granola: false)
         XCTAssertEqual(tracker.phase, .idle)
+        XCTAssertEqual(observe(&tracker, 231..<300, .none, granola: true), [])
+        XCTAssertEqual(tracker.phase, .idle)
+    }
+
+    func testStartThatFailedForGoodClaimsNothing() {
+        var tracker = makeTracker()
+        _ = observe(&tracker, 0, .full, granola: false)
+        _ = observe(&tracker, 5, .full, granola: false)
+        tracker.startFailed(at: at(6), mayStillStart: false)
+        XCTAssertEqual(observe(&tracker, 7..<60, .full, granola: true), [])
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
     }
 
     // MARK: User requests and feedback
@@ -186,7 +256,7 @@ final class CallTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.phase, .awaitingStop(recordingStartedAt: at(6), callOver: false))
         XCTAssertNil(tracker.stopRequestedByUser())
         tracker.stopFinished()
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
+        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil, claim: nil))
         XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
     }
 
@@ -198,20 +268,20 @@ final class CallTrackerTests: XCTestCase {
         XCTAssertNil(tracker.stopRequestedByUser())
     }
 
-    func testFailedStartWaitsForCallToEnd() {
+    func testHoldOffUntilCallEndsPreventsAStart() {
         var tracker = makeTracker()
         _ = observe(&tracker, 0, .full, granola: false)
-        XCTAssertEqual(observe(&tracker, 5, .full, granola: false), [.startRecording])
-        tracker.startFailed()
-        XCTAssertEqual(tracker.phase, .notOurs(quietSince: nil))
-        XCTAssertEqual(observe(&tracker, 60, .full, granola: false), [])
+        tracker.holdOffUntilCallEnds()
+        XCTAssertEqual(observe(&tracker, 1..<60, .full, granola: false), [])
+        _ = observe(&tracker, 60..<81, .none, granola: false)
+        XCTAssertEqual(tracker.phase, .idle)
     }
 
     func testFeedbackIsIgnoredInUnexpectedPhases() {
         var tracker = makeTracker()
         tracker.startSucceeded(at: at(0))
         tracker.stopFinished()
-        tracker.startFailed()
+        tracker.startFailed(at: at(0), mayStillStart: true)
         XCTAssertEqual(tracker.phase, .idle)
     }
 

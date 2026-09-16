@@ -246,12 +246,101 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(h.world.buttonPresses, 0)
     }
 
+    // MARK: Review scenarios
+
+    func testRecordingResumedAfterConsentIsStoppedWhenTheCallEnds() {
+        let h = Harness()
+        let agent = h.makeAgent()
+        h.world.callActive = true
+        h.run(agent, seconds: 30)
+        h.world.granolaRecording = false
+        h.run(agent, seconds: 20)
+        XCTAssertEqual(h.presenter.notices, [.recordingStarted, .recordingStoppedByGranola])
+
+        h.world.granolaRecording = true
+        h.run(agent, seconds: 30)
+        h.world.callActive = false
+        h.run(agent, seconds: 25)
+        XCTAssertEqual(h.world.buttonPresses, 1)
+        XCTAssertFalse(h.world.granolaRecording)
+    }
+
+    func testHeadsetSwitchAfterTheCallStillStops() {
+        let h = Harness()
+        let agent = h.makeAgent()
+        h.world.callActive = true
+        h.run(agent, seconds: 30)
+        h.world.callActive = false
+        h.run(agent, seconds: 3)
+        h.world.granolaRecording = false
+        h.run(agent, seconds: 7)
+        h.world.granolaRecording = true
+        h.run(agent, seconds: 20)
+        XCTAssertEqual(h.world.buttonPresses, 1)
+        XCTAssertFalse(h.world.granolaRecording)
+        XCTAssertEqual(h.presenter.notices, [.recordingStarted])
+    }
+
+    func testMidCallDropoutDoesNotNotifyAndStillStops() {
+        let h = Harness()
+        let agent = h.makeAgent()
+        h.world.callActive = true
+        h.run(agent, seconds: 30)
+        h.world.granolaRecording = false
+        h.run(agent, seconds: 7)
+        h.world.granolaRecording = true
+        h.run(agent, seconds: 30)
+        h.world.callActive = false
+        h.run(agent, seconds: 25)
+        XCTAssertEqual(h.presenter.notices, [.recordingStarted])
+        XCTAssertEqual(h.world.buttonPresses, 1)
+    }
+
+    func testLateStartIsTrackedAndStopped() {
+        let h = Harness()
+        let agent = h.makeAgent()
+        h.world.startsRecordingOnDeepLink = false
+        h.world.callActive = true
+        h.run(agent, seconds: 10)
+        XCTAssertEqual(h.presenter.notices, [.startFailed(.didNotStartRecording)])
+
+        h.world.granolaRecording = true
+        h.run(agent, seconds: 5)
+        XCTAssertEqual(h.presenter.notices, [.startFailed(.didNotStartRecording), .recordingStarted])
+        XCTAssertNotNil(h.store.stored)
+
+        h.world.callActive = false
+        h.run(agent, seconds: 25)
+        XCTAssertEqual(h.world.buttonPresses, 1)
+        XCTAssertFalse(h.world.granolaRecording)
+    }
+
+    func testStopRequestForARecordingTheAppDoesNotTrack() {
+        let h = Harness()
+        h.world.granolaRecording = true
+        h.world.callActive = true
+        let agent = h.makeAgent()
+
+        agent.requestStop()
+        XCTAssertEqual(h.world.buttonPresses, 1)
+        XCTAssertFalse(h.world.granolaRecording)
+
+        h.run(agent, seconds: 60)
+        XCTAssertEqual(h.world.deepLinksOpened, 0)
+
+        h.world.callActive = false
+        h.run(agent, seconds: 30)
+        h.world.callActive = true
+        h.run(agent, seconds: 10)
+        XCTAssertEqual(h.world.deepLinksOpened, 1)
+    }
+
     // MARK: Restarts
 
     func testResumesResponsibilityAfterRestart() {
         let h = Harness()
         let startedAt = h.time.now.addingTimeInterval(-600)
-        h.store.stored = startedAt
+        h.store.stored = OwnedRecord(recordingStartedAt: startedAt, heartbeatAt: h.time.now.addingTimeInterval(-40))
         h.world.granolaRecording = true
         h.world.callActive = true
 
@@ -265,16 +354,33 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(h.world.deepLinksOpened, 0)
     }
 
-    func testDoesNotResumeStaleOrFinishedRecordings() {
-        let stale = Harness()
-        stale.store.stored = stale.time.now.addingTimeInterval(-13 * 3600)
-        stale.world.granolaRecording = true
-        XCTAssertEqual(stale.makeAgent().tracker.phase, .idle)
-        XCTAssertNil(stale.store.stored)
+    func testStaleOwnershipDoesNotTakeOverAnotherRecording() {
+        let h = Harness()
+        let twoHoursAgo = h.time.now.addingTimeInterval(-7200)
+        h.store.stored = OwnedRecord(recordingStartedAt: twoHoursAgo, heartbeatAt: twoHoursAgo)
+        h.world.granolaRecording = true
 
-        let finished = Harness()
-        finished.store.stored = finished.time.now.addingTimeInterval(-600)
-        XCTAssertEqual(finished.makeAgent().tracker.phase, .idle)
-        XCTAssertNil(finished.store.stored)
+        let agent = h.makeAgent()
+        XCTAssertEqual(agent.tracker.phase, .idle)
+        XCTAssertNil(h.store.stored)
+        h.run(agent, seconds: 120)
+        XCTAssertEqual(h.world.buttonPresses, 0)
+        XCTAssertTrue(h.world.granolaRecording)
+    }
+
+    func testOwnershipWithoutARunningRecordingIsDropped() {
+        let h = Harness()
+        h.store.stored = OwnedRecord(recordingStartedAt: h.time.now.addingTimeInterval(-600), heartbeatAt: h.time.now)
+        XCTAssertEqual(h.makeAgent().tracker.phase, .idle)
+        XCTAssertNil(h.store.stored)
+    }
+
+    func testHeartbeatStaysFreshWhileRecording() throws {
+        let h = Harness()
+        let agent = h.makeAgent()
+        h.world.callActive = true
+        h.run(agent, seconds: 200)
+        let record = try XCTUnwrap(h.store.stored)
+        XCTAssertLessThanOrEqual(h.time.now.timeIntervalSince(record.heartbeatAt), Agent.heartbeatInterval + 1)
     }
 }

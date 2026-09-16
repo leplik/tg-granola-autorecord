@@ -51,6 +51,8 @@ public protocol StopRoutes {
 public struct StopSequence {
     public static let socketWait: TimeInterval = 30
     public static let buttonWait: TimeInterval = 10
+    /// Granola must stay off the microphone this long to count as already stopped, so a brief dropout does not.
+    public static let stoppedConfirmation: TimeInterval = 5
 
     private let routes: StopRoutes
     private let time: TimeSource
@@ -63,20 +65,29 @@ public struct StopSequence {
     }
 
     public func run(recordingStartedAt: Date) -> StopOutcome {
-        guard routes.isGranolaRecording() else { return .alreadyStopped }
+        guard isRecording() else { return .alreadyStopped }
         if stopViaSocket(recordingStartedAt: recordingStartedAt) { return .stoppedViaSocket }
 
+        // The socket route can take half a minute, so check again right before pressing anything.
+        guard isRecording() else { return .alreadyStopped }
         let result = routes.pressStopButton()
         log("button route: \(result)")
-        guard result == .pressed else {
-            // Someone may have stopped the recording while the routes were being tried.
-            return routes.isGranolaRecording() ? .failed(result) : .alreadyStopped
+        switch result {
+        case .pressed, .failed:
+            // A press can report kAXErrorCannotComplete and still take effect, so wait either way.
+            if poll(timeout: Self.buttonWait, time: time, until: { !routes.isGranolaRecording() }) {
+                return .stoppedViaButton
+            }
+            log("Granola kept recording after the press")
+            return .failed(result)
+        case .notTrusted, .granolaNotRunning, .notFound:
+            return isRecording() ? .failed(result) : .alreadyStopped
         }
-        if poll(timeout: Self.buttonWait, time: time, until: { !routes.isGranolaRecording() }) {
-            return .stoppedViaButton
-        }
-        log("pressed the stop button, but Granola kept recording")
-        return .failed(.pressed)
+    }
+
+    /// True if Granola records at any point within `stoppedConfirmation`.
+    private func isRecording() -> Bool {
+        poll(timeout: Self.stoppedConfirmation, time: time, until: routes.isGranolaRecording)
     }
 
     /// Route 1: report `meeting-ended` the way Granola's Google Meet extension does.

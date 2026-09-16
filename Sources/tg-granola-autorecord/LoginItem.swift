@@ -70,9 +70,11 @@ enum RunningApp {
         }
     }
 
-    /// Starts the app in the background through LaunchServices.
+    /// Starts the installed app in the background. Launching by path rather than bundle identifier
+    /// avoids picking up a stray copy, e.g. a build folder or an unzipped download.
     static func launch() throws {
-        try Shell.run("/usr/bin/open", ["-g", "-b", Product.bundleID])
+        let path = StatusAlert.isInApplicationsFolder() ? Bundle.main.bundlePath : "/Applications/\(Product.name).app"
+        try Shell.run("/usr/bin/open", ["-g", "-a", path])
     }
 }
 

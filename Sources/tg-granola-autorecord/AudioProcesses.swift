@@ -5,9 +5,11 @@ import Darwin
 /// Lists processes that CoreAudio tracks, with their microphone and speaker usage.
 /// Needs macOS 14.4 or later and no special permission.
 enum AudioProcesses {
+    /// Only this user's processes: with fast user switching, CoreAudio also lists other sessions.
     static func snapshot() -> [AudioProcessState] {
-        processObjectIDs().map { objectID in
+        processObjectIDs().compactMap { objectID in
             let pid = pid(of: objectID)
+            guard isOwnedByCurrentUser(pid: pid) else { return nil }
             return AudioProcessState(
                 pid: pid,
                 bundleID: bundleID(of: objectID),
@@ -66,6 +68,15 @@ enum AudioProcesses {
         guard status == noErr, let string = value?.takeRetainedValue() else { return nil }
         let bundleID = string as String
         return bundleID.isEmpty ? nil : bundleID
+    }
+
+    private static func isOwnedByCurrentUser(pid: pid_t) -> Bool {
+        guard pid > 0 else { return false }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return false }
+        return info.kp_eproc.e_ucred.cr_uid == getuid()
     }
 
     private static func executablePath(pid: pid_t) -> String? {

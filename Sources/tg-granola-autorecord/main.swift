@@ -91,6 +91,7 @@ case "disable":
     runOrExit {
         Preferences.turnedOffByUser = true
         RunningApp.stop()
+        FileOwnedRecordingStore(url: paths.ownedRecording).save(nil)
         if LoginItem.service.status != .notRegistered && LoginItem.service.status != .notFound {
             try LoginItem.service.unregister()
         }

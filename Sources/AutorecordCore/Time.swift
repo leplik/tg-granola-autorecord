@@ -6,13 +6,24 @@ public protocol TimeSource {
     func sleep(seconds: TimeInterval)
 }
 
-public struct SystemTime: TimeSource {
+/// Wall-clock time as of launch, advanced by a monotonic clock that keeps counting through sleep.
+/// Adjusting the system clock therefore cannot stall or skip the agent's timers.
+public final class SystemTime: TimeSource {
+    private let wallAtStart = Date()
+    private let monotonicAtStart = SystemTime.monotonicSeconds()
+
     public init() {}
 
-    public var now: Date { Date() }
+    public var now: Date {
+        wallAtStart.addingTimeInterval(SystemTime.monotonicSeconds() - monotonicAtStart)
+    }
 
     public func sleep(seconds: TimeInterval) {
         Thread.sleep(forTimeInterval: seconds)
+    }
+
+    private static func monotonicSeconds() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000
     }
 }
 

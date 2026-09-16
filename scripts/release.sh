@@ -22,7 +22,8 @@ TAG="v$VERSION"
 NOTARY_PROFILE="${NOTARY_PROFILE:-tg-granola-autorecord}"
 TAP_REPO="${TAP_REPO:-leplik/homebrew-tap}"
 DRY_RUN="${DRY_RUN:-0}"
-OUT=".build/release"
+# Not .build/release: SwiftPM owns that name and replaces it on the next release build.
+OUT=".build/dist"
 APP="$OUT/$NAME.app"
 ZIP="$OUT/$COMMAND-$VERSION.zip"
 
@@ -44,7 +45,10 @@ if [[ "$DRY_RUN" != "1" ]]; then
   [[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || fail "releases are cut from main"
   git fetch --quiet origin main --tags
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || fail "main is not in sync with origin/main"
-  git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && fail "tag $TAG already exists"
+  # A rerun after a failed publish is fine, as long as the tag marks this very commit.
+  if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    [[ "$(git rev-list -n 1 "$TAG")" == "$(git rev-parse HEAD)" ]] || fail "tag $TAG exists on another commit"
+  fi
   gh auth status >/dev/null 2>&1 || fail "gh is not signed in"
 fi
 
@@ -58,14 +62,14 @@ scripts/build-app.sh --sign "$SIGN_IDENTITY" --arch universal --output "$OUT"
 step "Notarize"
 SUBMISSION="$OUT/notarize.zip"
 ditto -c -k --keepParent "$APP" "$SUBMISSION"
-if ! xcrun notarytool submit "$SUBMISSION" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$OUT/notary.json"; then
-  cat "$OUT/notary.json" >&2 || true
-  fail "notarization request failed"
-fi
-STATUS="$(plutil -extract status raw -o - "$OUT/notary.json")"
-SUBMISSION_ID="$(plutil -extract id raw -o - "$OUT/notary.json")"
+xcrun notarytool submit "$SUBMISSION" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$OUT/notary.json" || true
+STATUS="$(plutil -extract status raw -o - "$OUT/notary.json" 2>/dev/null || echo unknown)"
+SUBMISSION_ID="$(plutil -extract id raw -o - "$OUT/notary.json" 2>/dev/null || true)"
 if [[ "$STATUS" != "Accepted" ]]; then
-  xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+  cat "$OUT/notary.json" >&2 || true
+  if [[ -n "$SUBMISSION_ID" ]]; then
+    xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+  fi
   fail "notarization status: $STATUS"
 fi
 rm -f "$SUBMISSION"
@@ -93,9 +97,16 @@ awk -v version="$VERSION" '
   printing && /^\[.*\]: / { exit }
   printing { print }
 ' CHANGELOG.md > "$NOTES"
-git tag -a "$TAG" -m "$NAME $VERSION"
+git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$NAME $VERSION"
 git push origin "$TAG"
-gh release create "$TAG" "$ZIP" "$ZIP.sha256" --title "$NAME $VERSION" --notes-file "$NOTES"
+# Upload into a draft and publish last, so nobody downloads a half-uploaded release.
+if gh release view "$TAG" >/dev/null 2>&1; then
+  gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber
+  gh release edit "$TAG" --title "$NAME $VERSION" --notes-file "$NOTES"
+else
+  gh release create "$TAG" "$ZIP" "$ZIP.sha256" --draft --title "$NAME $VERSION" --notes-file "$NOTES"
+fi
+gh release edit "$TAG" --draft=false --latest
 
 step "Update the Homebrew tap"
 TAP_DIR="$OUT/tap"
@@ -103,8 +114,12 @@ gh repo clone "$TAP_REPO" "$TAP_DIR" -- --quiet
 mkdir -p "$TAP_DIR/Casks"
 sed -e "s/{{VERSION}}/$VERSION/" -e "s/{{SHA256}}/$SHA256/" \
   packaging/homebrew/tg-granola-autorecord.rb.template > "$TAP_DIR/Casks/tg-granola-autorecord.rb"
-git -C "$TAP_DIR" add Casks/tg-granola-autorecord.rb
-git -C "$TAP_DIR" commit --quiet -m "tg-granola-autorecord $VERSION"
-git -C "$TAP_DIR" push --quiet origin HEAD
+if [[ -n "$(git -C "$TAP_DIR" status --porcelain -- Casks/tg-granola-autorecord.rb)" ]]; then
+  git -C "$TAP_DIR" add Casks/tg-granola-autorecord.rb
+  git -C "$TAP_DIR" commit --quiet -m "tg-granola-autorecord $VERSION"
+  git -C "$TAP_DIR" push --quiet origin HEAD
+else
+  echo "the tap already has this version"
+fi
 
 step "Done: https://github.com/leplik/tg-granola-autorecord/releases/tag/$TAG"

@@ -15,6 +15,7 @@ app:
 
 install: app
 	-pkill -TERM -f "/Applications/$(APP_NAME).app/Contents/MacOS/$(COMMAND)$$"
+	@for i in $$(seq 50); do pgrep -f "/Applications/$(APP_NAME).app/Contents/MacOS/$(COMMAND)$$" >/dev/null || break; sleep 0.1; done
 	rm -rf "/Applications/$(APP_NAME).app"
 	cp -R ".build/app/$(APP_NAME).app" /Applications/
 	open "/Applications/$(APP_NAME).app"

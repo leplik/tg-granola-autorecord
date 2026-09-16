@@ -46,4 +46,32 @@ final class StopSequenceTests: XCTestCase {
         world.onButtonPress = { world.granolaRecording = false }
         XCTAssertEqual(run(world), .alreadyStopped)
     }
+
+    func testBriefDropoutAtStopTimeStillPresses() {
+        let world = FakeWorld()
+        world.onRecordingCheck = { checks in
+            if checks == 3 { world.granolaRecording = true }
+        }
+        XCTAssertEqual(run(world), .stoppedViaButton)
+        XCTAssertEqual(world.buttonPresses, 1)
+    }
+
+    func testPressReportedAsFailedButEffectiveCountsAsStopped() {
+        let world = FakeWorld()
+        world.granolaRecording = true
+        world.buttonResult = .failed(code: -25204)
+        XCTAssertEqual(run(world), .stoppedViaButton)
+    }
+
+    func testRecordingThatEndsBeforeThePressIsNotPressed() {
+        let world = FakeWorld()
+        world.granolaRecording = true
+        world.extensionAutoStopEnabled = true
+        world.socketFails = true
+        world.onRecordingCheck = { checks in
+            if checks == 2 { world.granolaRecording = false }
+        }
+        XCTAssertEqual(run(world), .alreadyStopped)
+        XCTAssertEqual(world.buttonPresses, 0)
+    }
 }

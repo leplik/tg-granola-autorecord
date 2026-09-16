@@ -28,17 +28,31 @@ public protocol NoticePresenter {
     func present(_ notice: AgentNotice)
 }
 
+/// The recording the agent is responsible for, with a heartbeat that shows the agent was alive recently.
+public struct OwnedRecord: Codable, Equatable, Sendable {
+    public var recordingStartedAt: Date
+    public var heartbeatAt: Date
+
+    public init(recordingStartedAt: Date, heartbeatAt: Date) {
+        self.recordingStartedAt = recordingStartedAt
+        self.heartbeatAt = heartbeatAt
+    }
+}
+
 public protocol OwnedRecordingStore {
-    func load() -> Date?
-    func save(_ recordingStartedAt: Date?)
+    func load() -> OwnedRecord?
+    func save(_ record: OwnedRecord?)
 }
 
 /// Runs the tracker against the real world: observes, acts, notifies and remembers what it owns.
 /// Not thread-safe; the caller runs every method on one serial queue.
 public final class Agent {
     public static let startWait: TimeInterval = 45
-    /// A remembered recording older than this is not resumed after a restart.
-    public static let ownedRecordingMaxAge: TimeInterval = 12 * 3600
+    /// How often the owned-recording heartbeat is refreshed while a recording runs.
+    public static let heartbeatInterval: TimeInterval = 30
+    /// A restarted agent resumes a recording only if the previous one was alive this recently.
+    /// Covers restarts and upgrades, but not a file left behind by a crash hours ago.
+    public static let resumeWindow: TimeInterval = 120
 
     public private(set) var tracker: CallTracker
     public private(set) var lastEvent: String?
@@ -52,7 +66,7 @@ public final class Agent {
     private let ownedRecording: OwnedRecordingStore
     private let time: TimeSource
     private let log: (String) -> Void
-    private var savedOwnership: Date?
+    private var savedRecord: OwnedRecord?
     private var loggedPhase: CallTracker.Phase
 
     public init(
@@ -75,7 +89,7 @@ public final class Agent {
         self.time = time
         self.log = log
 
-        let restored = Agent.resumableRecording(
+        let resumed = Agent.resumableRecording(
             stored: ownedRecording.load(),
             now: time.now,
             granolaRecording: AudioSignals.isGranolaRecording(audio.snapshot())
@@ -83,20 +97,26 @@ public final class Agent {
         tracker = CallTracker(
             startDelay: config.startDelaySeconds,
             endGrace: config.endGraceSeconds,
-            restoredRecordingStartedAt: restored
+            restoredRecordingStartedAt: resumed?.recordingStartedAt
         )
         loggedPhase = tracker.phase
-        savedOwnership = restored
-        ownedRecording.save(restored)
-        if let restored {
-            log("resumed responsibility for the recording started at \(restored)")
+        if let resumed {
+            log("resumed responsibility for the recording started at \(resumed.recordingStartedAt)")
+            savedRecord = nil
+            persistOwnership()
+        } else {
+            ownedRecording.save(nil)
+            savedRecord = nil
         }
     }
 
-    static func resumableRecording(stored: Date?, now: Date, granolaRecording: Bool) -> Date? {
-        guard let stored, granolaRecording, stored <= now, now.timeIntervalSince(stored) < ownedRecordingMaxAge else {
-            return nil
-        }
+    static func resumableRecording(stored: OwnedRecord?, now: Date, granolaRecording: Bool) -> OwnedRecord? {
+        guard
+            let stored,
+            granolaRecording,
+            stored.recordingStartedAt <= now,
+            abs(now.timeIntervalSince(stored.heartbeatAt)) < resumeWindow
+        else { return nil }
         return stored
     }
 
@@ -117,14 +137,24 @@ public final class Agent {
 
     /// The user asked to stop the current recording, e.g. from the notification.
     public func requestStop() {
-        guard let action = tracker.stopRequestedByUser() else {
-            log("stop requested, but there is no recording of ours to stop")
+        if let action = tracker.stopRequestedByUser() {
+            log("stop requested by the user")
+            logPhase(context: nil)
+            perform(action)
+            persistOwnership()
             return
         }
-        log("stop requested by the user")
+        // The notification may outlive the agent that posted it, e.g. after a restart. The user still wants it stopped.
+        guard AudioSignals.isGranolaRecording(audio.snapshot()) else {
+            log("stop requested, but Granola is not recording")
+            return
+        }
+        note("stop requested for a recording the app is not tracking")
+        tracker.holdOffUntilCallEnds()
         logPhase(context: nil)
-        perform(action)
-        persistOwnership()
+        let outcome = StopSequence(routes: stopRoutes, time: time, log: log).run(recordingStartedAt: .distantPast)
+        note("stop finished: \(outcome)")
+        if case .failed(let reason) = outcome { presenter.present(.stopFailed(reason)) }
     }
 
     private func perform(_ action: TrackerAction) {
@@ -138,9 +168,12 @@ public final class Agent {
             if likelyByUser {
                 note("Granola stopped recording after \(seconds) s while it was the frontmost app, most likely by hand")
             } else {
-                note("Granola stopped recording after \(seconds) s on its own")
+                note("Granola stopped recording after \(seconds) s on its own; if it records again during this call, the app tracks it again")
                 presenter.present(.recordingStoppedByGranola)
             }
+        case .recordingStartedLate:
+            note("Granola started recording late; the app tracks this recording")
+            if config.notifyOnStart { presenter.present(.recordingStarted) }
         }
         logPhase(context: nil)
     }
@@ -149,7 +182,7 @@ public final class Agent {
         guard granola.isInstalled() else {
             note("call detected, but Granola is not installed")
             presenter.present(.granolaNotInstalled)
-            tracker.startFailed()
+            tracker.startFailed(at: time.now, mayStillStart: false)
             return
         }
         log("call detected, asking Granola to start a note")
@@ -158,16 +191,16 @@ public final class Agent {
         } catch {
             note("could not open Granola: \(error)")
             presenter.present(.startFailed(.couldNotOpenGranola))
-            tracker.startFailed()
+            tracker.startFailed(at: time.now, mayStillStart: false)
             return
         }
         let started = poll(timeout: Self.startWait, time: time) {
             AudioSignals.isGranolaRecording(audio.snapshot())
         }
         guard started else {
-            note("Granola did not start recording within \(Int(Self.startWait)) s")
+            note("Granola did not start recording within \(Int(Self.startWait)) s; a late start still counts")
             presenter.present(.startFailed(.didNotStartRecording))
-            tracker.startFailed()
+            tracker.startFailed(at: time.now, mayStillStart: true)
             return
         }
         note("Granola started recording the call")
@@ -195,14 +228,26 @@ public final class Agent {
     }
 
     private func persistOwnership() {
-        let current = tracker.ownedRecordingStartedAt
-        guard current != savedOwnership else { return }
-        ownedRecording.save(current)
-        savedOwnership = current
+        let now = time.now
+        guard let startedAt = tracker.ownedRecordingStartedAt else {
+            if savedRecord != nil {
+                ownedRecording.save(nil)
+                savedRecord = nil
+            }
+            return
+        }
+        if let saved = savedRecord,
+           saved.recordingStartedAt == startedAt,
+           now.timeIntervalSince(saved.heartbeatAt) < Self.heartbeatInterval {
+            return
+        }
+        let record = OwnedRecord(recordingStartedAt: startedAt, heartbeatAt: now)
+        ownedRecording.save(record)
+        savedRecord = record
     }
 }
 
-/// What the running agent reports about itself, for `doctor`.
+/// What the running app reports about itself, for `doctor`.
 public struct AgentStatus: Codable, Equatable, Sendable {
     public var version: String
     public var pid: Int32

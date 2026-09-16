@@ -30,8 +30,9 @@ public struct StopButtonCandidate: Equatable, Sendable {
 /// Decides which button in Granola's note view is "Stop transcript".
 ///
 /// Granola renders it as an icon-only button whose "Stop transcript" text lives in a hover tooltip,
-/// so today it has no accessible name. The matcher accepts an explicit label first, in case Granola
-/// adds one, and otherwise falls back to the button's Tailwind classes next to the transcript pill.
+/// so today it has no accessible name. The matcher accepts a button whose whole label is exactly
+/// "Stop transcript" or "Stop transcribing", in case Granola adds one, and otherwise falls back to the
+/// button's Tailwind classes next to the transcript pill.
 public enum StopButtonMatcher {
     static let labelNeedles = ["stop transcript", "stop transcribing"]
     /// Classes of the trailing half of the transcript pill (`joined: "trailing"`).
@@ -39,10 +40,11 @@ public enum StopButtonMatcher {
     /// Class of the leading half, the show/hide transcript button with the waveform.
     static let transcriptPillClass = "min-w-[48px]"
 
+    /// Exact, case-insensitive match, so a note titled "Why we stop transcribing" never counts.
     public static func hasStopLabel(_ button: AXButtonInfo) -> Bool {
         [button.title, button.label, button.help].contains { text in
-            guard let text = text?.lowercased() else { return false }
-            return labelNeedles.contains { text.contains($0) }
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+            return labelNeedles.contains(text)
         }
     }
 
@@ -60,7 +62,6 @@ public enum StopButtonMatcher {
     public static func pick(_ candidates: [StopButtonCandidate]) -> Int? {
         let labeled = candidates.indices.filter { hasStopLabel(candidates[$0].button) }
         if labeled.count == 1 { return labeled[0] }
-        if labeled.count > 1 { return nil }
         let structural = candidates.indices.filter { looksLikeStopButton(candidates[$0]) }
         return structural.count == 1 ? structural[0] : nil
     }

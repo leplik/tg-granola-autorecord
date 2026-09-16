@@ -35,7 +35,8 @@ enum Log {
         lock.lock()
         defer { lock.unlock() }
         if let file {
-            file.write(Data(line.utf8))
+            // write(contentsOf:) throws instead of raising an Objective-C exception, e.g. on a full disk.
+            try? file.write(contentsOf: Data(line.utf8))
             system.log(level: type, "\(message, privacy: .public)")
             rotateIfNeeded(file)
         } else {
@@ -45,18 +46,15 @@ enum Log {
 
     private static func openFile() {
         guard let fileURL else { return }
-        let manager = FileManager.default
-        try? manager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !manager.fileExists(atPath: fileURL.path) {
-            manager.createFile(atPath: fileURL.path, contents: nil)
-        }
-        file = try? FileHandle(forWritingTo: fileURL)
-        _ = try? file?.seekToEnd()
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let descriptor = open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+        file = descriptor >= 0 ? FileHandle(fileDescriptor: descriptor, closeOnDealloc: true) : nil
     }
 
     /// Keeps one previous file next to the current one: `name.log` and `name.log.1`.
     private static func rotateIfNeeded(_ handle: FileHandle) {
-        guard let size = try? handle.offset(), size > maxFileBytes, let fileURL else { return }
+        var info = stat()
+        guard fstat(handle.fileDescriptor, &info) == 0, UInt64(info.st_size) > maxFileBytes, let fileURL else { return }
         try? handle.close()
         let previous = fileURL.appendingPathExtension("1")
         try? FileManager.default.removeItem(at: previous)

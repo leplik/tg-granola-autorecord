@@ -109,6 +109,17 @@ final class StopButtonMatcherTests: XCTestCase {
         XCTAssertTrue(StopButtonMatcher.hasStopLabel(AXButtonInfo(label: "Stop transcript")))
         XCTAssertFalse(StopButtonMatcher.hasStopLabel(AXButtonInfo(title: "Stop rewriting")))
         XCTAssertFalse(StopButtonMatcher.hasStopLabel(AXButtonInfo(label: "Copy transcript")))
+        XCTAssertFalse(StopButtonMatcher.hasStopLabel(AXButtonInfo(title: "Why we stop transcribing")))
+        XCTAssertTrue(StopButtonMatcher.hasStopLabel(AXButtonInfo(help: "  Stop transcript\n")))
+    }
+
+    func testAmbiguousLabelsFallBackToStructure() {
+        let candidates = [
+            StopButtonCandidate(button: AXButtonInfo(title: "Stop transcript"), siblingClasses: []),
+            StopButtonCandidate(button: AXButtonInfo(label: "Stop transcribing"), siblingClasses: []),
+            StopButtonCandidate(button: AXButtonInfo(classes: stopClasses), siblingClasses: Set(pillClasses)),
+        ]
+        XCTAssertEqual(StopButtonMatcher.pick(candidates), 2)
     }
 }
 
