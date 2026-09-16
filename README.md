@@ -90,14 +90,17 @@ sequenceDiagram
 | Granola is already recording, for example a Meet call, when a Telegram call starts | Leaves that recording alone and does not stop it later. |
 | You press **Stop Recording** in the notification | Stops the recording and does not start another one until the next call. |
 | You stop the recording in Granola yourself | Respects it and stays out of the way until the call ends. |
-| Granola stops the recording by itself, for example because of a workspace consent policy | Tells you, and does not try to work around it. |
+| Granola stops the recording by itself, for example because of a workspace consent policy | Tells you, and does not work around it. If Granola records again during the call, for example after you confirm consent, the app still stops it when the call ends. |
+| Granola briefly drops the microphone, for example when a headset switches profile | Ignores dropouts shorter than 15 seconds. |
 | The call drops and reconnects within 20 seconds | Keeps it as one recording. |
 | You mute your microphone | Keeps recording while Telegram still plays the other side. |
 | You record a voice message | Nothing: only the microphone is in use. |
 | Granola is not running | Opens it in the background. |
-| Granola is missing, signed out, or does not start recording | Tells you. |
+| Granola takes more than 45 seconds to start recording | Tells you. If the recording starts within three minutes after all, the app still stops it when the call ends. |
+| Granola is missing or signed out | Tells you. |
 | The recording cannot be stopped | Tells you why, with a button to open Granola or Accessibility settings. |
-| The app restarts in the middle of a call, for example during an update | Picks up the recording it started and still stops it when the call ends. |
+| The app restarts in the middle of a call, for example during an update | Picks up the recording it started and still stops it when the call ends. A recording it has not seen for over two minutes is left alone. |
+| You tap **Stop Recording** on an old notification after a restart | Stops the recording anyway. |
 
 ## Configuration
 
@@ -153,7 +156,7 @@ The log is at `~/Library/Logs/tg-granola-autorecord.log`. The same lines appear 
 
 The app depends on four undocumented parts of Granola: the new-note link, the Meet extension socket, a feature flag, and the structure of the stop button. [docs/internals.md](docs/internals.md) describes each one and how to check it again. Each release records the Granola version it was tested with, and `doctor` warns when yours is newer.
 
-When something breaks, the failure is visible: a recording that does not start, or a notification that it could not be stopped. The app never keeps recording silently after a call it could not stop.
+When something breaks, the failure is visible: a recording that does not start, or a notification that it could not be stopped. Keep notifications allowed, because they are how the app tells you.
 
 ## Uninstall
 

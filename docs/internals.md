@@ -26,6 +26,8 @@ The main process is `dist-electron/main/index.js`. The renderer chunks are in `d
 
 Granola holds the microphone only while it transcribes. The app treats any process whose bundle identifier starts with `com.granola.app`, or whose executable lives in `Granola.app`, as Granola.
 
+Granola also releases the microphone for a few seconds when its audio process restarts or the input device changes, for example when a Bluetooth headset switches profile. Mid-call, the app counts Granola as stopped only after 15 seconds off the microphone. Before calling a recording already stopped at the end of a call, it watches for 5 seconds.
+
 - **Check:** `tg-granola-autorecord monitor` shows `Granola recording: yes` during a recording and `no` otherwise.
 
 ## 3. Stopping, route 1: the Meet extension socket

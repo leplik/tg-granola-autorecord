@@ -15,7 +15,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Two stop routes: Granola's Meet extension socket when Granola allows it, then the stop button through Accessibility.
 - Notifications when Granola is missing, a recording does not start, a recording cannot be stopped, or Granola stops a recording on its own.
 - Leaves recordings it did not start alone, and does not restart a recording the user stopped.
-- Resumes responsibility for its recording after a restart.
+- Keeps track of its recording through microphone dropouts, a consent pause in Granola, and a slow start of up to three minutes.
+- Resumes responsibility for its recording after a restart, if the previous run was alive within two minutes.
 - `doctor`, `monitor`, `enable`, `disable`, `restart`, `start`, `stop`, `test-notification` and `ax-dump` commands.
 - Signed and notarized universal build, GitHub Releases and a Homebrew cask.
 
