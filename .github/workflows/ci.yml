@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Test
+        run: swift test
+
+      - name: Build the app bundle (ad-hoc signed)
+        run: scripts/build-app.sh --sign - --arch native --output .build/ci
+
+      - name: Check the bundle
+        run: |
+          APP=".build/ci/Telegram-Granola Autorecord.app"
+          plutil -lint "$APP/Contents/Info.plist" "$APP/Contents/Library/LaunchAgents/"*.plist
+          codesign --verify --strict --verbose=2 "$APP"
+          "$APP/Contents/MacOS/tg-granola-autorecord" --version

@@ -1,0 +1,35 @@
+cask "tg-granola-autorecord" do
+  version "{{VERSION}}"
+  sha256 "{{SHA256}}"
+
+  url "https://github.com/leplik/tg-granola-autorecord/releases/download/v#{version}/tg-granola-autorecord-#{version}.zip"
+  name "Telegram-Granola Autorecord"
+  desc "Record Telegram calls in Granola automatically"
+  homepage "https://github.com/leplik/tg-granola-autorecord"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: ">= :sonoma"
+
+  app "Telegram-Granola Autorecord.app"
+  binary "#{appdir}/Telegram-Granola Autorecord.app/Contents/MacOS/tg-granola-autorecord"
+
+  uninstall launchctl: "pro.saac.tg-granola-autorecord.agent",
+            quit:      "pro.saac.tg-granola-autorecord"
+
+  zap trash: [
+    "~/.config/tg-granola-autorecord",
+    "~/Library/Application Support/tg-granola-autorecord",
+    "~/Library/Logs/tg-granola-autorecord.log",
+    "~/Library/Logs/tg-granola-autorecord.log.1",
+  ]
+
+  caveats <<~EOS
+    Open Telegram-Granola Autorecord once to turn it on, then allow Accessibility access
+    so recordings stop when calls end. Check the setup with:
+      tg-granola-autorecord doctor
+  EOS
+end

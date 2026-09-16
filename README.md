@@ -1,104 +1,171 @@
-# granola-autorecord
+<p align="center">
+  <img src="Resources/AppIcon-1024.png" width="128" height="128" alt="">
+</p>
 
-[Granola](https://granola.ai) starts recording on its own for Zoom, Google Meet and Teams, but it does not notice Telegram calls. This small macOS background agent fills that gap. When Telegram opens the microphone and the speaker, it starts a Granola note. When the call goes quiet, it stops the recording.
+<h1 align="center">Telegram-Granola Autorecord</h1>
 
-> Not affiliated with Granola or Telegram. The agent relies on undocumented parts of the Granola desktop app, and any Granola update can break them. Every failure ends in a macOS notification, so a broken update means "stop it by hand", not a silent all-day recording.
+<p align="center">
+  Granola records your Zoom, Meet and Teams calls by itself. This makes it record your Telegram calls too.
+</p>
 
-## How it works
+<p align="center">
+  <a href="https://github.com/leplik/tg-granola-autorecord/actions/workflows/ci.yml"><img src="https://github.com/leplik/tg-granola-autorecord/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/leplik/tg-granola-autorecord/releases/latest"><img src="https://img.shields.io/github/v/release/leplik/tg-granola-autorecord" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14.4%2B-blue" alt="macOS 14.4 or later">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/leplik/tg-granola-autorecord" alt="MIT license"></a>
+</p>
 
-**Detecting a call.** Once a second the agent reads the list of audio processes from CoreAudio, available since macOS 14.4 and requiring no permission. A call has started when a watched app keeps both the microphone and the speaker open for 5 seconds. It is over when both stay closed for 20 seconds, so a reconnect does not split the note.
+---
 
-**Starting.** The agent opens `granola://new-document`. That is Granola's own deep link: it creates a note and starts transcribing. If Granola is already recording, for example during a Meet call, the agent leaves it alone.
+[Granola](https://granola.ai) notices calls in the apps it knows and starts taking notes. Telegram is not one of them, so Telegram calls go unrecorded unless you remember to press the button. Telegram-Granola Autorecord is a small background app that remembers for you:
 
-**Stopping.** Granola has no stop command, so the agent tries three things in order. It only ever stops a recording it started, and it backs off if you stopped the recording yourself.
+- **A Telegram call starts:** Granola starts recording, and a notification offers a **Stop Recording** button.
+- **The call ends:** the recording stops, and Granola writes the summary as usual.
+- **Anything goes wrong:** you get a notification that says what to do.
 
-1. **Meet extension socket.** Granola listens on a local socket for its Google Meet extension. The agent sends the extension's `meeting-ended` event there. Granola acts on it only when its `meet_consent_extension_auto_stop` feature flag is on and the recording is at least three minutes old. The agent reads the flag from Granola's cache and skips this step when the flag is off.
-2. **Stop button.** The agent finds the stop button in Granola's window through the Accessibility API and presses it. This needs the Accessibility permission.
-3. **Notification.** If Granola is still recording, a notification asks you to stop it by hand.
+It works with Telegram Desktop from telegram.org and the Mac App Store, and with the native Telegram for macOS client.
 
-## Requirements
-
-- macOS 14.4 or later
-- The Granola desktop app, signed in
-- Swift 5.10 or later, from Xcode or the Command Line Tools
+> This is an independent project, not affiliated with Telegram or Granola. Granola has no public API for starting or stopping recordings, so the app relies on undocumented parts of the Granola desktop app. A Granola update can break it; the app tells you when that happens. See [How reliable is this?](#how-reliable-is-this)
 
 ## Install
 
+**Homebrew**
+
 ```sh
-git clone https://github.com/leplik/granola-autorecord.git
-cd granola-autorecord
+brew install --cask leplik/tap/tg-granola-autorecord
+```
+
+**Download**
+
+Get the zip from the [latest release](https://github.com/leplik/tg-granola-autorecord/releases/latest), unzip it and move **Telegram-Granola Autorecord** to Applications. Builds are universal, signed and notarized.
+
+**From source**
+
+```sh
+git clone https://github.com/leplik/tg-granola-autorecord.git
+cd tg-granola-autorecord
 make install
 ```
 
-`make install` builds a release binary, copies it to `~/Library/Application Support/granola-autorecord/` and starts a LaunchAgent that runs at login.
+Requires macOS 14.4 or later and the [Granola desktop app](https://granola.ai).
 
-Then open **System Settings → Privacy & Security → Accessibility** and enable `granola-autorecord`. Without it the agent still starts recordings, but the stop-button step is skipped.
+## Set up
 
-macOS ties the Accessibility permission to the exact binary. After each `make install`, remove the old entry with the minus button and enable the new one.
+1. **Open Telegram-Granola Autorecord** from Applications. It turns on its background agent and shows what is still missing. There is no window or menu bar icon after that.
+2. **Allow notifications** when macOS asks. Notifications carry the Stop Recording button and all error messages.
+3. **Allow Accessibility access** in **System Settings → Privacy & Security → Accessibility**. The app needs it to press Granola's stop button when a call ends. Without it, recordings start but do not stop by themselves.
 
-## Checking that it works
-
-Watch what the detector sees, without touching Granola:
-
-```sh
-make monitor
-```
-
-Place a Telegram call and look for `call signal: full`. Also record a voice message and see whether it reaches `full`; see limitations below.
-
-Follow the agent itself:
+Check everything at once:
 
 ```sh
-tail -f ~/Library/Logs/granola-autorecord.log
+tg-granola-autorecord doctor
 ```
 
-Try each action by hand:
+## How it works
 
-```sh
-.build/release/granola-autorecord start    # starts a Granola note, as on call start
-.build/release/granola-autorecord stop     # runs the stop sequence, as on call end
-.build/release/granola-autorecord ax-dump  # lists the buttons Granola exposes to Accessibility
+```mermaid
+sequenceDiagram
+    participant T as Telegram
+    participant A as Autorecord
+    participant G as Granola
+    T->>A: microphone and speaker in use for 5 s
+    A->>G: open granola://new-document
+    G-->>A: Granola takes the microphone
+    Note over A: notification with Stop Recording
+    T->>A: microphone and speaker free for 20 s
+    A->>G: stop the recording
+    G-->>A: Granola releases the microphone
 ```
 
-`stop` and `ax-dump` need Accessibility access for the terminal app you run them from.
+**Detecting calls.** Once a second the app asks macOS which processes use the microphone and the speaker. It needs no permission for this and never touches audio. A call has started when Telegram uses both for five seconds, and is over when it has used neither for twenty.
+
+**Starting.** The app opens `granola://new-document`, Granola's own link for a new note, which starts transcribing straight away. Granola stays in the background.
+
+**Stopping.** Granola has no stop command, so the app tries two routes. First it sends Granola the "meeting ended" message that Granola's Google Meet extension sends, which Granola honours on some accounts. Then it presses Granola's stop button through the Accessibility API. If Granola is still recording after both, you get a notification.
+
+### What happens when…
+
+| Situation | What the app does |
+|---|---|
+| Granola is already recording, for example a Meet call, when a Telegram call starts | Leaves that recording alone and does not stop it later. |
+| You press **Stop Recording** in the notification | Stops the recording and does not start another one until the next call. |
+| You stop the recording in Granola yourself | Respects it and stays out of the way until the call ends. |
+| Granola stops the recording by itself, for example because of a workspace consent policy | Tells you, and does not try to work around it. |
+| The call drops and reconnects within 20 seconds | Keeps it as one recording. |
+| You mute your microphone | Keeps recording while Telegram still plays the other side. |
+| You record a voice message | Nothing: only the microphone is in use. |
+| Granola is not running | Opens it in the background. |
+| Granola is missing, signed out, or does not start recording | Tells you. |
+| The recording cannot be stopped | Tells you why, with a button to open Granola or Accessibility settings. |
+| The app restarts in the middle of a call, for example during an update | Picks up the recording it started and still stops it when the call ends. |
 
 ## Configuration
 
-Settings are optional. Create `~/.config/granola-autorecord/config.json` with any of these fields, then run `make install` again or restart the agent.
+Settings are optional. Create `~/.config/tg-granola-autorecord/config.json` with any of these fields, then run `tg-granola-autorecord restart`.
 
 ```json
 {
-  "apps": ["com.tdesktop.Telegram", "org.telegram.desktop", "ru.keepcoder.Telegram"],
   "startDelaySeconds": 5,
   "endGraceSeconds": 20,
-  "creationSource": "application_menu"
+  "notifyOnStart": true
 }
 ```
 
-| Field | Meaning |
+| Field | Default | Meaning |
+|---|---|---|
+| `startDelaySeconds` | `5` | How long Telegram must use both microphone and speaker before recording starts. |
+| `endGraceSeconds` | `20` | How long both must stay free before the call counts as over. |
+| `notifyOnStart` | `true` | Show the notification with the Stop Recording button when a recording starts. |
+| `apps` | the three Telegram clients | Bundle identifiers of the clients to watch. |
+| `creationSource` | `application_menu` | The `creation_source` sent to Granola for new notes. |
+
+## Command line
+
+Homebrew puts `tg-granola-autorecord` on your `PATH`. For a manual install, the command lives at `/Applications/Telegram-Granola Autorecord.app/Contents/MacOS/tg-granola-autorecord`.
+
+| Command | What it does |
 |---|---|
-| `apps` | Bundle identifiers to watch. The defaults cover Telegram Desktop from telegram.org, Telegram Desktop from the Mac App Store, and the native Telegram for macOS client. |
-| `startDelaySeconds` | How long microphone and speaker must both stay open before recording starts. |
-| `endGraceSeconds` | How long both must stay closed before the call counts as over. |
-| `creationSource` | The `creation_source` value sent to Granola for new notes. |
+| `doctor` | Checks the setup and prints a report. Paste it into bug reports. |
+| `monitor` | Shows live what the call detector sees, without touching Granola. |
+| `enable`, `disable` | Turns the background agent on or off. |
+| `restart` | Restarts the agent, for example after editing settings. |
+| `start`, `stop` | Starts or stops a Granola recording right now, the way the agent would. |
+| `ax-dump` | Lists the buttons Granola exposes to Accessibility. Useful after a Granola update. |
 
-To find another app's bundle identifier, run `osascript -e 'id of app "WhatsApp"'`.
+## Troubleshooting
 
-## Limitations
+Start with `tg-granola-autorecord doctor`. It checks macOS, the agent, permissions, Granola, Telegram and your settings, and shows the latest log lines.
 
-- **Voice messages.** Recording a voice message opens the microphone. If the speaker is also open for more than five seconds, the agent takes it for a call. Check with `make monitor` and raise `startDelaySeconds` if needed.
-- **Stop button matching.** Granola's stop button is an icon with a tooltip and has no accessible name. The agent recognises it by its CSS classes next to the transcript control, and presses nothing unless exactly one button matches. A Granola redesign can break this. When that happens, run `ax-dump` during a recording and open an issue with the output.
-- **Socket side effects.** While connected, Granola briefly counts the agent as a Meet extension client in its own analytics.
-- **Where notes go.** Notes land in your Granola account like any other note, with your workspace's default sharing. Check that before recording private calls.
+- **A call does not start a recording.** Run `tg-granola-autorecord monitor` during a call. It should show `call signal: full`. If it does, check that Granola is signed in and can record on its own.
+- **A recording does not stop.** Check Accessibility access. If it is on and Granola was updated recently, run `tg-granola-autorecord ax-dump` during a recording and open a [Granola update issue](https://github.com/leplik/tg-granola-autorecord/issues/new?template=granola_update.yml).
+- **Something else started a recording.** Watch `monitor` while it happens and raise `startDelaySeconds` if short sounds trigger it.
+
+The log is at `~/Library/Logs/tg-granola-autorecord.log`. The same lines appear in Console.app under the subsystem `pro.saac.tg-granola-autorecord`.
+
+## Privacy and consent
+
+- **Nothing leaves your Mac.** The app makes no network requests. It only asks macOS which apps use the microphone and the speaker, and never reads audio.
+- **Notes are ordinary Granola notes.** They follow the same sharing settings as the rest of your notes. Check your workspace's default sharing before recording private calls.
+- **Consent is on you.** Many places require everyone on a call to agree to it being recorded. Tell the people you talk to.
+
+## How reliable is this?
+
+The app depends on four undocumented parts of Granola: the new-note link, the Meet extension socket, a feature flag, and the structure of the stop button. [docs/internals.md](docs/internals.md) describes each one and how to check it again. Each release records the Granola version it was tested with, and `doctor` warns when yours is newer.
+
+When something breaks, the failure is visible: a recording that does not start, or a notification that it could not be stopped. The app never keeps recording silently after a call it could not stop.
 
 ## Uninstall
 
 ```sh
-make uninstall
+brew uninstall --cask --zap tg-granola-autorecord
 ```
 
-This stops the agent and removes the binary and the LaunchAgent. The log and config file stay. Remove the Accessibility entry by hand.
+For a manual install, run `tg-granola-autorecord disable`, then delete the app. Remove its entry from **Accessibility** in System Settings by hand.
+
+## Contributing
+
+Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE). Telegram and Granola are trademarks of their respective owners.

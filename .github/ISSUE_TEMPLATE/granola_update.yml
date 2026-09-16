@@ -1,0 +1,28 @@
+name: Broke after a Granola update
+description: Recordings no longer start or stop after Granola updated itself.
+labels: [granola-compat]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The agent relies on undocumented parts of Granola, so its updates can break it. Two outputs make the fix quick.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `tg-granola-autorecord doctor`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: ax-dump
+    attributes:
+      label: Output of `tg-granola-autorecord ax-dump` while Granola is recording
+      description: Start a recording in Granola first. The command lists buttons and their CSS classes, not note content.
+      render: text
+  - type: textarea
+    id: details
+    attributes:
+      label: What stopped working
+      description: Starting, stopping, or both? Any notification you saw?
+    validations:
+      required: true

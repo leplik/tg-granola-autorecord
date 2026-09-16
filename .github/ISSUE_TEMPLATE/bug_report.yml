@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work as described in the README.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The output of `tg-granola-autorecord doctor` answers most questions up front, so please include it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `tg-granola-autorecord doctor`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log lines
+      description: From `~/Library/Logs/tg-granola-autorecord.log`, around the time of the call.
+      render: text
+  - type: input
+    id: telegram
+    attributes:
+      label: Telegram client and version
+      placeholder: Telegram Desktop 6.1 from telegram.org
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues.
+          required: true
