@@ -15,6 +15,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/leplik/tg-granola-autorecord" alt="MIT license"></a>
 </p>
 
+<p align="center">
+  <a href="https://leplik.github.io/tg-granola-autorecord/">leplik.github.io/tg-granola-autorecord</a>
+</p>
+
 ---
 
 [Granola](https://granola.ai) notices calls in the apps it knows and starts taking notes. Telegram is not one of them, so Telegram calls go unrecorded unless you remember to press the button. Telegram-Granola Autorecord is a small background app that remembers for you:

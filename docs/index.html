@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram-Granola Autorecord: record Telegram calls in Granola on macOS</title>
+<meta name="description" content="A free macOS app that starts a Granola recording when a Telegram call begins and stops it when the call ends. Open source, signed and notarized.">
+<link rel="canonical" href="https://leplik.github.io/tg-granola-autorecord/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://leplik.github.io/tg-granola-autorecord/">
+<meta property="og:title" content="Telegram-Granola Autorecord">
+<meta property="og:description" content="Granola records Zoom, Meet and Teams by itself. This small Mac app adds Telegram calls.">
+<meta property="og:image" content="https://leplik.github.io/tg-granola-autorecord/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Telegram-Granola Autorecord">
+<meta name="twitter:description" content="Granola records Zoom, Meet and Teams by itself. This small Mac app adds Telegram calls.">
+<meta name="twitter:image" content="https://leplik.github.io/tg-granola-autorecord/og.png">
+<link rel="icon" href="icon-512.png" sizes="512x512">
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+  :root {
+    --bg: #0e1230;
+    --bg-soft: #161c47;
+    --card: rgba(255, 255, 255, 0.06);
+    --line: rgba(255, 255, 255, 0.14);
+    --ink: #f5f6ff;
+    --ink-soft: rgba(245, 246, 255, 0.72);
+    --accent: #8ea2ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(160deg, #212a5e 0%, var(--bg) 60%);
+    background-attachment: fixed;
+    color: var(--ink);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main, header, footer { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  header { padding-top: 72px; padding-bottom: 8px; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .brand img { width: 88px; height: 88px; border-radius: 20px; }
+  h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; letter-spacing: -0.02em; margin: 28px 0 12px; }
+  h2 { font-size: 26px; letter-spacing: -0.01em; margin: 48px 0 14px; }
+  h3 { font-size: 19px; margin: 0 0 6px; }
+  p { margin: 0 0 16px; }
+  .lead { font-size: 21px; color: var(--ink-soft); }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; overflow-x: auto; font-size: 15px; color: var(--accent);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0 8px; }
+  .button {
+    display: inline-block; padding: 12px 20px; border-radius: 999px; text-decoration: none;
+    font-weight: 600; border: 1px solid var(--line); color: var(--ink); background: var(--card);
+  }
+  .button.primary { background: var(--accent); color: #11142f; border-color: transparent; }
+  .steps { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; counter-reset: step; }
+  .steps li {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px;
+    display: grid; grid-template-columns: 34px 1fr; gap: 14px; align-items: start;
+  }
+  .steps li::before {
+    counter-increment: step; content: counter(step);
+    font-weight: 700; font-size: 22px; color: var(--accent);
+  }
+  .muted { color: var(--ink-soft); }
+  dl { margin: 0; }
+  dt { font-weight: 600; margin-top: 20px; }
+  dd { margin: 6px 0 0; color: var(--ink-soft); }
+  footer { padding: 56px 20px 72px; color: var(--ink-soft); font-size: 15px; }
+  footer a { color: var(--ink-soft); }
+  img.shot { width: 100%; border-radius: 18px; border: 1px solid var(--line); margin: 8px 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img src="icon-512.png" alt="">
+    <strong>Telegram-Granola Autorecord</strong>
+  </div>
+  <h1>Telegram calls, recorded in Granola.</h1>
+  <p class="lead">Granola notices Zoom, Meet and Teams on its own and starts taking notes. Telegram is not on that list. This small Mac app adds it: the call starts, Granola records; you hang up, it stops.</p>
+  <div class="row">
+    <a class="button primary" href="https://github.com/leplik/tg-granola-autorecord/releases/latest">Download for macOS</a>
+    <a class="button" href="https://github.com/leplik/tg-granola-autorecord">Source on GitHub</a>
+  </div>
+  <pre>brew install --cask leplik/tap/tg-granola-autorecord</pre>
+  <p class="muted">Free and open source. Needs macOS 14.4 or later and the Granola app. Signed and notarized.</p>
+</header>
+
+<main>
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><div><h3>A Telegram call starts</h3><p class="muted">The app sees that Telegram is using the microphone and the speaker.</p></div></li>
+    <li><div><h3>Granola starts recording</h3><p class="muted">A note appears and notes are taken, as in any other call. A notification offers a Stop button.</p></div></li>
+    <li><div><h3>You hang up</h3><p class="muted">The recording stops by itself and Granola writes the summary.</p></div></li>
+  </ol>
+  <p class="muted">No window, no menu bar icon. It speaks up only when something needs you.</p>
+  <img class="shot" src="og.png" alt="Telegram calls, recorded in Granola">
+
+  <h2>Set up once</h2>
+  <ol class="steps">
+    <li><div><h3>Open the app</h3><p class="muted">It adds itself to Login Items and shows what is still missing.</p></div></li>
+    <li><div><h3>Allow notifications</h3><p class="muted">They carry the Stop button and every warning.</p></div></li>
+    <li><div><h3>Allow Accessibility access</h3><p class="muted">It is how the recording is stopped when a call ends.</p></div></li>
+  </ol>
+  <p>Check everything with one command:</p>
+  <pre>tg-granola-autorecord doctor</pre>
+
+  <h2>Questions</h2>
+  <dl>
+    <dt>Which Telegram clients work?</dt>
+    <dd>Telegram Desktop from telegram.org and from the Mac App Store, and the native Telegram for macOS client.</dd>
+
+    <dt>Does anything leave my Mac?</dt>
+    <dd>Not through this app. It makes no network requests. It only asks macOS which apps use the microphone and the speaker, and never touches audio. The notes are ordinary Granola notes and follow your Granola sharing settings.</dd>
+
+    <dt>What if Granola is already recording?</dt>
+    <dd>It is left alone. The app only stops recordings it started, and never restarts one you stopped by hand.</dd>
+
+    <dt>Is it reliable?</dt>
+    <dd>Granola has no public command for starting or stopping a recording, so the app relies on undocumented parts of the Granola desktop app, which a Granola update can change. Every failure ends in a notification instead of silence.</dd>
+
+    <dt>Do I need to tell people they are being recorded?</dt>
+    <dd>In many places, yes. Recording calls is your responsibility.</dd>
+  </dl>
+</main>
+
+<footer>
+  <p><a href="https://github.com/leplik/tg-granola-autorecord">GitHub</a> · <a href="https://github.com/leplik/tg-granola-autorecord/releases/latest">Releases</a> · <a href="https://github.com/leplik/tg-granola-autorecord/blob/main/docs/internals.md">How it talks to Granola</a> · <a href="https://github.com/leplik/tg-granola-autorecord/blob/main/LICENSE">MIT licence</a></p>
+  <p>An independent project, not affiliated with Telegram or Granola. Telegram and Granola are trademarks of their respective owners.</p>
+</footer>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Telegram-Granola Autorecord",
+  "description": "A macOS app that starts a Granola recording when a Telegram call begins and stops it when the call ends.",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS 14.4 or later",
+  "softwareVersion": "1.0.0",
+  "url": "https://leplik.github.io/tg-granola-autorecord/",
+  "downloadUrl": "https://github.com/leplik/tg-granola-autorecord/releases/latest",
+  "license": "https://github.com/leplik/tg-granola-autorecord/blob/main/LICENSE",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</body>
+</html>
