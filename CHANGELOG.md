@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-16
+
+### Fixed
+
+- Recordings stop again when a call ends. Once another assistive app has touched Granola, Granola keeps a basic accessibility tree in which its stop button ignores presses while the window is in the background, and the app pressed it anyway. Now the app presses the button only when it accepts presses. If needed, it shows Granola for about a second and then returns you to the app you were using.
+- The stop button match no longer picks Resume, Start now or Retry, which take the same place in Granola's transcript pill.
+
+### Changed
+
+- `ax-dump` lists the actions of each button, so it shows whether the stop button accepts presses.
+- Checked against Granola 7.786.3.
+
 ## [1.0.0] - 2026-09-16
 
 ### Added
@@ -20,5 +32,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - `doctor`, `monitor`, `enable`, `disable`, `restart`, `start`, `stop`, `test-notification` and `ax-dump` commands.
 - Signed and notarized universal build, GitHub Releases and a Homebrew cask.
 
-[Unreleased]: https://github.com/leplik/tg-granola-autorecord/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/leplik/tg-granola-autorecord/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/leplik/tg-granola-autorecord/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/leplik/tg-granola-autorecord/releases/tag/v1.0.0

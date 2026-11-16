@@ -5,7 +5,7 @@ public enum Product {
     public static let bundleID = "pro.saac.tg-granola-autorecord"
     public static let command = "tg-granola-autorecord"
     /// Single source of truth for the version. `scripts/build-app.sh` copies it into Info.plist.
-    public static let version = "1.0.0"
+    public static let version = "1.0.1"
     public static let repository = "https://github.com/leplik/tg-granola-autorecord"
 }
 
