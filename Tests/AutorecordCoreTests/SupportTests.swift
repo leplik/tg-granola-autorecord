@@ -86,6 +86,15 @@ final class StopButtonMatcherTests: XCTestCase {
         XCTAssertEqual(StopButtonMatcher.pick(candidates), 1)
     }
 
+    func testSkipsResumeAndOtherButtonsWithTextInTheSamePlace() {
+        let resume = StopButtonCandidate(button: AXButtonInfo(title: "Resume", classes: stopClasses), siblingClasses: Set(pillClasses))
+        let startNow = StopButtonCandidate(button: AXButtonInfo(label: "Start now", classes: stopClasses), siblingClasses: Set(pillClasses))
+        let stop = StopButtonCandidate(button: AXButtonInfo(title: " ", classes: stopClasses), siblingClasses: Set(pillClasses))
+        XCTAssertNil(StopButtonMatcher.pick([resume]))
+        XCTAssertNil(StopButtonMatcher.pick([startNow]))
+        XCTAssertEqual(StopButtonMatcher.pick([resume, stop]), 1)
+    }
+
     func testIgnoresLookalikeWithoutTranscriptPill() {
         let candidates = [StopButtonCandidate(button: AXButtonInfo(classes: stopClasses), siblingClasses: ["px-1"])]
         XCTAssertNil(StopButtonMatcher.pick(candidates))

@@ -14,6 +14,11 @@ public struct AXButtonInfo: Equatable, Sendable {
         self.help = help
         self.classes = classes
     }
+
+    /// Whether the button shows a name, usually its text.
+    public var hasName: Bool {
+        [title, label].contains { !($0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
+    }
 }
 
 public struct StopButtonCandidate: Equatable, Sendable {
@@ -33,6 +38,9 @@ public struct StopButtonCandidate: Equatable, Sendable {
 /// so today it has no accessible name. The matcher accepts a button whose whole label is exactly
 /// "Stop transcript" or "Stop transcribing", in case Granola adds one, and otherwise falls back to the
 /// button's Tailwind classes next to the transcript pill.
+///
+/// The Resume, Start now and Retry buttons take the same place in the pill and have the same classes,
+/// but they show text. A structural match must therefore have no name, so a stop never presses Resume.
 public enum StopButtonMatcher {
     static let labelNeedles = ["stop transcript", "stop transcribing"]
     /// Classes of the trailing half of the transcript pill (`joined: "trailing"`).
@@ -54,7 +62,9 @@ public enum StopButtonMatcher {
     }
 
     public static func looksLikeStopButton(_ candidate: StopButtonCandidate) -> Bool {
-        hasStopButtonClasses(candidate.button) && candidate.siblingClasses.contains(transcriptPillClass)
+        hasStopButtonClasses(candidate.button)
+            && !candidate.button.hasName
+            && candidate.siblingClasses.contains(transcriptPillClass)
     }
 
     /// Returns the index of the button to press, or nil when there is no single unambiguous match.

@@ -5,6 +5,8 @@ public enum ButtonPressResult: Equatable, Sendable {
     case notTrusted
     case granolaNotRunning
     case notFound(buttonsSeen: Int)
+    /// The stop button was found, but it never offered AXPress, so it was not pressed.
+    case notPressable
     case failed(code: Int32)
 }
 
@@ -15,6 +17,7 @@ extension ButtonPressResult: CustomStringConvertible {
         case .notTrusted: return "no Accessibility permission"
         case .granolaNotRunning: return "Granola is not running"
         case .notFound(let seen): return "no unambiguous stop button among \(seen) buttons"
+        case .notPressable: return "the stop button did not accept presses"
         case .failed(let code): return "pressing failed with AXError \(code)"
         }
     }
@@ -80,7 +83,7 @@ public struct StopSequence {
             }
             log("Granola kept recording after the press")
             return .failed(result)
-        case .notTrusted, .granolaNotRunning, .notFound:
+        case .notTrusted, .granolaNotRunning, .notFound, .notPressable:
             return isRecording() ? .failed(result) : .alreadyStopped
         }
     }

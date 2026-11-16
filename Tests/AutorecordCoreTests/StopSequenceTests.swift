@@ -39,6 +39,17 @@ final class StopSequenceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(time.now.timeIntervalSince(before), StopSequence.buttonWait)
     }
 
+    func testButtonThatDidNotAcceptThePressFailsWithoutWaiting() {
+        let world = FakeWorld()
+        world.granolaRecording = true
+        world.buttonResult = .notPressable
+        let time = FakeTime()
+        let before = time.now
+        XCTAssertEqual(run(world, time: time), .failed(.notPressable))
+        XCTAssertEqual(world.buttonPresses, 1)
+        XCTAssertLessThan(time.now.timeIntervalSince(before), StopSequence.buttonWait)
+    }
+
     func testRecordingStoppedMeanwhileCountsAsStopped() {
         let world = FakeWorld()
         world.granolaRecording = true

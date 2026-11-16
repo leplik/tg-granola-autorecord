@@ -96,6 +96,9 @@ final class Notifications: NSObject, NoticePresenter, UNUserNotificationCenterDe
         case .stopFailed(.notFound):
             return ("stop-failed", "Granola is still recording",
                     "Could not find Granola's stop button, possibly after a Granola update. Stop the recording in Granola.", Category.needsGranola.rawValue)
+        case .stopFailed(.notPressable):
+            return ("stop-failed", "Granola is still recording",
+                    "Granola's stop button did not accept the press. Stop the recording in Granola.", Category.needsGranola.rawValue)
         case .stopFailed:
             return ("stop-failed", "Granola is still recording",
                     "The call ended, but the recording could not be stopped. Stop it in Granola.", Category.needsGranola.rawValue)

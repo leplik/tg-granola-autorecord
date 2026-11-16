@@ -85,7 +85,7 @@ final class FakeWorld: AudioSource, GranolaLauncher, StopRoutes {
         switch buttonResult {
         case .pressed, .failed:
             if buttonStopsRecording { granolaRecording = false }
-        case .notTrusted, .granolaNotRunning, .notFound:
+        case .notTrusted, .granolaNotRunning, .notFound, .notPressable:
             break
         }
         return buttonResult

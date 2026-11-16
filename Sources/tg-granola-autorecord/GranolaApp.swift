@@ -43,16 +43,17 @@ struct GranolaApp: GranolaLauncher, StopRoutes {
     }
 
     func pressStopButton() -> ButtonPressResult {
-        GranolaAccessibility.pressStopButton(bringToFront: bringToFront)
+        GranolaAccessibility.pressStopButton(activate: Self.activate(bundleID:), log: Log.info)
     }
 
     // MARK: Helpers
 
-    func bringToFront() {
+    /// Brings an app to the front through LaunchServices, which works from a background app.
+    static func activate(bundleID: String) {
         do {
-            try Shell.run("/usr/bin/open", ["-b", Granola.bundleID])
+            try Shell.run("/usr/bin/open", ["-b", bundleID])
         } catch {
-            Log.warn("could not bring Granola to the front: \(error)")
+            Log.warn("could not bring \(bundleID) to the front: \(error)")
         }
     }
 

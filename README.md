@@ -85,7 +85,7 @@ sequenceDiagram
 
 **Starting.** The app opens `granola://new-document`, Granola's own link for a new note, which starts transcribing straight away. Granola stays in the background.
 
-**Stopping.** Granola has no stop command, so the app tries two routes. First it sends Granola the "meeting ended" message that Granola's Google Meet extension sends, which Granola honours on some accounts. Then it presses Granola's stop button through the Accessibility API. If Granola is still recording after both, you get a notification.
+**Stopping.** Granola has no stop command, so the app tries two routes. First it sends Granola the "meeting ended" message that Granola's Google Meet extension sends, which Granola honours on some accounts. Then it presses Granola's stop button through the Accessibility API. The button can ignore presses while Granola's window is behind other windows. In that case the app shows Granola for about a second, presses the button and returns you to the app you were using. If Granola is still recording after both routes, you get a notification.
 
 ### What happens when…
 
@@ -102,6 +102,7 @@ sequenceDiagram
 | Granola is not running | Opens it in the background. |
 | Granola takes more than 45 seconds to start recording | Tells you. If the recording starts within three minutes after all, the app still stops it when the call ends. |
 | Granola is missing or signed out | Tells you. |
+| Granola's window is behind other windows when the call ends | Shows Granola for about a second to press its stop button, then returns you to the app you were using. |
 | The recording cannot be stopped | Tells you why, with a button to open Granola or Accessibility settings. |
 | The app restarts in the middle of a call, for example during an update | Picks up the recording it started and still stops it when the call ends. A recording it has not seen for over two minutes is left alone. |
 | You tap **Stop Recording** on an old notification after a restart | Stops the recording anyway. |
